@@ -90,6 +90,9 @@ class App:
         self.debug = args.debug or cfg["game"].get("debug", False)
         self.pending_restart: dict[str, float] = {}
         self.skeletons = SkeletonLayer(self.size)
+        self.blades: dict = {}        # (who, hand) -> deque[(t, x, y, player)] trail points
+        self._last_hand: dict = {}    # (slot, hand) -> (t, x, y, scale) normalized, for swipe speed
+        self._last_mouse = None       # (t, x, y) while a button is held
         self.mouse_moved_at = 0.0
         self._cursor_visible = None
         self.settings_screen: SettingsScreen | None = None
@@ -110,7 +113,8 @@ class App:
         self.frame_clicks: list[tuple[int, int]] = []
         self.frame_keys: list = []
         self.over_buttons: list[Button] = []
-        self.menu = Menu(self.renderer, self.size, self.store, bank, gentle=cfg["rules"]["gentle"])
+        self.menu = Menu(self.renderer, self.size, self.store, bank, gentle=cfg["rules"]["gentle"],
+                         style=cfg["rules"].get("style", "punch"))
         self.state = "menu" if args.use_menu else "playing"
         self.new_game()
         self._update_cursor()
@@ -186,6 +190,7 @@ class App:
         self.args.names = [p.name for p in profiles]
         self.args.levels = [p.level for p in profiles]
         self.cfg["rules"]["gentle"] = req["gentle"]
+        self.cfg["rules"]["style"] = req.get("style", self.style)
         self.player_profiles = list(profiles)
         self.effects = Effects()
         self.new_game()
@@ -228,6 +233,9 @@ class App:
                 return False
             if e.type == pygame.MOUSEMOTION:
                 self.mouse_moved_at = now
+                if (self.state == "playing" and self.style == "slice" and not self.game.over
+                        and any(e.buttons)):
+                    self._mouse_slice(e, now)
             if e.type == pygame.KEYDOWN and display.is_toggle_key(e):
                 display.toggle_fullscreen()
                 self._update_cursor()
@@ -288,9 +296,28 @@ class App:
                 if self.game.over:
                     self.frame_clicks.append(e.pos)
                     continue
+                if self.style == "slice":
+                    self._last_mouse = (now, *e.pos)
+                    continue
                 player = {1: 0, 3: 1, 2: 2}[e.button]
                 self.game.punch(player, e.pos[0], now, e.pos[1])
         return True
+
+    def _mouse_slice(self, e, now: float) -> None:
+        """Drag with a mouse button held to slice (left = player 1, right = 2, middle = 3)."""
+        player = 0 if e.buttons[0] else 1 if e.buttons[2] else 2
+        if self._last_mouse is None:
+            self._last_mouse = (now, *e.pos)
+            return
+        t0, x0, y0 = self._last_mouse
+        x1, y1 = e.pos
+        self._last_mouse = (now, x1, y1)
+        dt = max(now - t0, 1e-3)
+        speed = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5 / dt
+        if speed > 600:
+            self._blade(("mouse", player), now, x1, y1, player)
+        if speed > 1200:
+            self.game.slice(player, x0, y0, x1, y1, now)
 
     def _update_cursor(self):
         """Mouse pointer: always in menus; during play (fullscreen + camera) only after it moves."""
@@ -299,6 +326,49 @@ class App:
         if self._cursor_visible != (not hide):
             self._cursor_visible = not hide
             pygame.mouse.set_visible(not hide)
+
+    @property
+    def style(self) -> str:
+        return self.cfg["rules"].get("style", "punch")
+
+    def _blade(self, key, t, x, y, player) -> None:
+        trail = self.blades.setdefault(key, deque(maxlen=12))
+        trail.append((t, x, y, player))
+
+    def _hand_point(self, person, hand: str):
+        """Roughly where the fist is: a bit past the wrist, along the forearm."""
+        wrist = person.get(hand, 0.4)
+        if wrist is None:
+            return None
+        elbow = person.get(hand.replace("wrist", "elbow"), 0.3)
+        if elbow is None:
+            return wrist.x, wrist.y
+        return wrist.x + (wrist.x - elbow.x) * 0.3, wrist.y + (wrist.y - elbow.y) * 0.3
+
+    def _slice_from_pose(self, slot, t: float, now: float) -> None:
+        """Turn a fast hand movement into a slice (slice style only)."""
+        person = slot.person
+        for hand in ("left_wrist", "right_wrist"):
+            key = (slot.index, hand)
+            pt = self._hand_point(person, hand) if person else None
+            prev = self._last_hand.get(key)
+            if pt is None:
+                self._last_hand.pop(key, None)
+                continue
+            self._last_hand[key] = (t, pt[0], pt[1], person.scale)
+            if prev is None or not (0 < t - prev[0] < 0.3):
+                continue
+            speed = ((pt[0] - prev[1]) ** 2 + (pt[1] - prev[2]) ** 2) ** 0.5 / person.scale / (t - prev[0])
+            x0, y0 = self.view.to_screen(prev[1], prev[2])
+            x1, y1 = self.view.to_screen(*pt)
+            player = self.game.lane_at((x0 + x1) / 2).players[0] if self.game.mode == "split" else slot.index
+            threshold = self.cfg["punch"].get("slice_speed", 5.0)
+            if speed >= threshold * 0.6:
+                if not self.blades.get(key) or now - self.blades[key][-1][0] > 0.3:
+                    self._blade(key, now, x0, y0, player)
+                self._blade(key, now, x1, y1, player)
+            if speed >= threshold:
+                self.game.slice(slot.index, x0, y0, x1, y1, now)
 
     def draw_skeletons(self, surf: pygame.Surface) -> None:
         if not (self.vision and self.cfg["game"].get("skeletons", True)):
@@ -370,10 +440,12 @@ class App:
             self.pose_times.append(t)
             slots = self.tracker.update(people, t)
             for s in slots:
+                if playing and self.style == "slice":
+                    self._slice_from_pose(s, t, now)
                 for p in self.punchers[s.index].update(s.person, t):
                     x, y = self.view.to_screen(p.x, p.y)
                     self.frame_punches.append((x, y))
-                    if not playing:
+                    if not playing or self.style == "slice":
                         continue
                     player = self.game.lane_at(x).players[0] if self.game.mode == "split" else s.index
                     color = PLAYER_COLORS[player % 3]
@@ -406,6 +478,21 @@ class App:
                 color = PLAYER_COLORS[ev.player % 3]
                 fx.ring(ev.x, ev.y, color, r0=10, r1=90, life=0.35, width=8)
                 fx.burst(ev.x, ev.y, [(200, 200, 210), color], n=14, speed=260, size=7, life=0.4)
+            elif k == "break" and ev.style == "slice":
+                self.sfx.play("slash")
+                color = PLAYER_COLORS[ev.player % 3]
+                w = ev.word
+                fx.split(r.block_image(w), ev.x, ev.y, ev.angle)
+                import math as _m
+                dx, dy = _m.cos(ev.angle) * w.w * 0.7, _m.sin(ev.angle) * w.w * 0.7
+                fx.streak(ev.x - dx, ev.y - dy, ev.x + dx, ev.y + dy, color)
+                fx.burst(ev.x, ev.y, [color, GOLD, (255, 255, 255)], n=40, speed=450)
+                ty = max(ev.y, r.hud_height + w.h * 0.6)
+                fx.float_text(random.choice(("SLICE!", "CHOP!", "SWISH!", "NINJA!", "SLASH!")),
+                              ev.x, ty, color, r.big_font, life=0.9, rise=30, pop=True)
+                fx.float_text(f"+{ev.points}", ev.x, ty + r.big_font.get_height() * 0.8, GOLD,
+                              r.pop_font, life=1.2, pop=True)
+                fx.shake = 6
             elif k == "break":
                 self.sfx.play("break")
                 color = PLAYER_COLORS[ev.player % 3]
@@ -442,8 +529,17 @@ class App:
                 fx.float_text("LEVEL UP!", cx, self.size[1] * 0.4, GOLD, r.big_font, life=2.0, rise=20, pop=True)
                 fx.float_text(ev.text, cx, self.size[1] * 0.52, (255, 255, 255), r.pop_font, life=2.0, rise=20)
                 fx.burst(cx, self.size[1] * 0.4, [GOLD, (255, 255, 255), (255, 120, 200)], n=120, speed=700)
+            elif k == "vanish":
+                fx.sparkle(ev.x, ev.y, GOLD, 14)
+            elif k == "lane_done":
+                self.sfx.play("win")
+                lane = ev.lane
+                cx = (lane.x0 + lane.x1) / 2
+                for i in range(4):
+                    fx.burst(cx + (i - 1.5) * 90, self.size[1] * 0.35,
+                             [GOLD, (255, 255, 255), (255, 120, 200), (120, 220, 255)], n=50, speed=650)
             elif k == "gameover":
-                self.sfx.play("gameover")
+                self.sfx.play("win" if ev.text == "complete" else "gameover")
                 self.over_at = now
                 self.save_progress(finished=True)
         if self.speech:
@@ -481,12 +577,14 @@ class App:
         r.draw_words(surf, self.game, now)
         self.effects.draw(surf)
         r.draw_rockets(surf, self.game, now)
+        r.draw_blades(surf, self.blades, now)
         r.draw_hands(surf, self.hands, now)
-        r.draw_lane_out(surf, self.game)
-        r.draw_hud(surf, self.game)
+        r.draw_lane_out(surf, self.game, now)
+        r.draw_hud(surf, self.game, now)
         self.effects.draw_texts(surf)
-        if now - self.game_started < 12:
-            r.draw_say_hint(surf, "Read the word out loud, then punch up under it!")
+        if now - self.game_started < 12 and not self.game.over:
+            r.draw_say_hint(surf, "Read the word out loud, then " +
+                            ("SLICE it with a fast swipe!" if self.style == "slice" else "punch up under it!"))
         if self.args.no_mic and self.show_typing:
             t = r.hud_font.render(f"say: {self.typed}_", True, (255, 255, 255))
             surf.blit(t, (14, self.size[1] - t.get_height() - 30))
@@ -527,7 +625,8 @@ class App:
     def step_game_over(self, dt: float, now: float) -> None:
         if not self.over_buttons:
             w, h = self.size
-            self.over_buttons = [Button("again", pygame.Rect(w // 2 - 380, int(h * 0.7), 360, 100),
+            again_x = w // 2 - 380 if self.args.use_menu else w // 2 - 180
+            self.over_buttons = [Button("again", pygame.Rect(again_x, int(h * 0.7), 360, 100),
                                         "Play again", "", (60, 160, 90))]
             if self.args.use_menu:
                 self.over_buttons.append(Button("menu", pygame.Rect(w // 2 + 20, int(h * 0.7), 360, 100),

@@ -4,12 +4,14 @@ Coordinates are screen pixels; y grows downward. Inputs arrive as method calls:
     game.heard(word, now)        a word came from the speech recognizer (or the keyboard in --sim)
     game.voice(now)              an unrecognized sound (for forgiving letter mode)
     game.punch(player, x, now)   a player punched at screen x
+    game.slice(player, x0, y0, x1, y1, now)   a fast hand swipe (slice mode)
     game.update(dt, now)         advance the simulation
 and everything that happened is appended to game.events for sound/effects.
 """
 from __future__ import annotations
 
 import itertools
+import math
 import random
 from dataclasses import dataclass, field
 from typing import Callable
@@ -21,6 +23,7 @@ from .difficulty import Difficulty
 from .track import Track
 
 MODES = ("split", "coop", "competitive")
+ROUND_ENDS = ("lives", "words", "time", "level")
 
 Measure = Callable[[str, bool], tuple[int, int]]  # (text, is_letter) -> (w, h) of the word block
 
@@ -53,6 +56,7 @@ class FallingWord:
     unlocked_at: float = 0.0
     read_time: float = 0.0
     misses: int = 0  # times it hit the floor (gentle mode)
+    last_clang: float = -1e9
 
 
 @dataclass(eq=False)
@@ -75,7 +79,9 @@ class Lane:
     difficulty: Difficulty
     players: list[int]                 # who plays here (split: one; shared: all)
     lives: int | None                  # None = gentle mode
-    alive: bool = True
+    alive: bool = True                 # still playing (False once out of lives or finished)
+    done: bool = False                 # finished the round's goal
+    broken: int = 0                    # words broken in this lane this round
     spawn_timer: float = 0.0
     next_track: itertools.cycle = None  # round-robin over tracks (co-op with mixed levels)
 
@@ -85,7 +91,7 @@ class Lane:
 
 @dataclass
 class Event:
-    kind: str  # unlock | break | clang | miss | bounce | say | levelup | lane_out | gameover | spawn
+    kind: str  # unlock|break|clang|miss|bounce|say|levelup|lane_out|lane_done|gameover|spawn|launch
     word: FallingWord | None = None
     player: int | None = None
     points: int = 0
@@ -93,6 +99,8 @@ class Event:
     x: float = 0.0
     y: float = 0.0
     text: str = ""
+    style: str = "punch"   # break: "punch" | "slice"
+    angle: float = 0.0     # slice direction (radians)
 
 
 class Game:
@@ -113,7 +121,12 @@ class Game:
         self.rockets: list[Rocket] = []
         self.events: list[Event] = []
         self.over = False
+        self.result: str | None = None   # "complete" | "out" once over
+        self.winner: int | None = None   # competitive
         self.started_at = now
+        self.round_end = self.rules.get("round_end", "lives")
+        self.round_words = int(self.rules.get("round_words", 15))
+        self.round_seconds = float(self.rules.get("round_minutes", 3)) * 60
         self._ids = itertools.count()
         lives = None if self.rules["gentle"] else self.rules["lives"]
         n = len(self.players)
@@ -152,6 +165,17 @@ class Game:
             if not w.unlocked and w.lane.alive:
                 tokens |= self.bank.listen_tokens(w.text, w.is_letter)
         return tokens
+
+    def word_goal(self, lane: Lane) -> int:
+        """Words to finish this lane (co-op shares one bigger goal; race is per player)."""
+        if self.mode == "coop":
+            return self.round_words * len(self.players)
+        return self.round_words
+
+    def time_left(self, now: float) -> float | None:
+        if self.round_end != "time":
+            return None
+        return max(0.0, self.round_seconds - (now - self.started_at))
 
     def lane_at(self, x: float) -> Lane:
         for lane in self.lanes:
@@ -210,10 +234,41 @@ class Game:
         self.events.append(Event("launch", player=player, x=x, y=start_y, lane=lane))
         return rocket
 
+    def slice(self, player: int, x0: float, y0: float, x1: float, y1: float, now: float) -> list:
+        """A fast swipe from (x0, y0) to (x1, y1): cuts unlocked words it passes through."""
+        if self.over:
+            return []
+        mx = (x0 + x1) / 2
+        lane = self.lane_at(mx)
+        if self.mode == "split":
+            player = lane.players[0]
+        if player >= len(self.players):
+            return []
+        angle = math.atan2(y1 - y0, x1 - x0)
+        cut = []
+        for w in list(self.words):
+            if not w.lane.alive or (self.mode == "split" and w.lane is not lane):
+                continue
+            if not _segment_hits_rect(x0, y0, x1, y1, w.x, w.y, w.w / 2 + 12, w.h / 2 + 12):
+                continue
+            if w.unlocked:
+                self._break(w, player, now, style="slice", angle=angle)
+                cut.append(w)
+            elif now - w.last_clang > 0.6:
+                w.last_clang = now
+                self.events.append(Event("clang", w, player=player, x=w.x, y=w.y, style="slice"))
+        return cut
+
     # ---- simulation ----------------------------------------------------------------
 
     def update(self, dt: float, now: float) -> None:
         if self.over:
+            return
+        if self.round_end == "time" and now - self.started_at >= self.round_seconds:
+            for lane in self.lanes:
+                if lane.alive:
+                    self._finish_lane(lane)
+            self._check_over()
             return
         for lane in self.lanes:
             if not lane.alive:
@@ -289,7 +344,7 @@ class Game:
                 return x
         return None
 
-    def _break(self, w: FallingWord, player: int, now: float) -> None:
+    def _break(self, w: FallingWord, player: int, now: float, style: str = "punch", angle: float = 0.0) -> None:
         p = self.players[player]
         p.combo += 1
         p.best_combo = max(p.best_combo, p.combo)
@@ -297,11 +352,46 @@ class Game:
         pts = scoring.points(w.base_points, w.read_time, now - w.unlocked_at, p.combo - 1, self.score_cfg)
         p.score += pts
         self.words.remove(w)
-        w.lane.difficulty.on_hit(w.read_time)
-        self.events.append(Event("break", w, player=player, points=pts, x=w.x, y=w.y))
-        if w.track.record_hit(w.text, w.level_key, w.read_time) and w.track.level_up():
-            self.events.append(Event("levelup", lane=w.lane, player=w.track.owner,
-                                     text=w.track.level.name))
+        lane = w.lane
+        lane.broken += 1
+        lane.difficulty.on_hit(w.read_time)
+        self.events.append(Event("break", w, player=player, points=pts, x=w.x, y=w.y,
+                                 style=style, angle=angle))
+        if w.track.record_hit(w.text, w.level_key, w.read_time):
+            w.track.finished = True
+            if w.track.level_up():
+                self.events.append(Event("levelup", lane=lane, player=w.track.owner,
+                                         text=w.track.level.name))
+
+        # Round goals.
+        if self.round_end == "words":
+            if self.mode == "competitive":
+                if p.broken >= self.round_words:
+                    self.winner = player
+                    self._finish_lane(lane)
+            elif lane.broken >= self.word_goal(lane):
+                self._finish_lane(lane)
+        elif self.round_end == "level" and all(getattr(t, "finished", False) for t in lane.tracks):
+            if self.mode == "competitive":
+                self.winner = max(range(len(self.players)), key=lambda i: self.players[i].score)
+            self._finish_lane(lane)
+        self._check_over()
+
+    def _finish_lane(self, lane: Lane) -> None:
+        lane.alive, lane.done = False, True
+        for w in [x for x in self.words if x.lane is lane]:
+            self.words.remove(w)
+            self.events.append(Event("vanish", w, x=w.x, y=w.y))
+        self.events.append(Event("lane_done", lane=lane))
+
+    def _check_over(self) -> None:
+        if self.over or any(l.alive for l in self.lanes):
+            return
+        self.over = True
+        self.result = "complete" if any(l.done for l in self.lanes) else "out"
+        if self.mode == "competitive" and self.winner is None and self.result == "complete":
+            self.winner = max(range(len(self.players)), key=lambda i: self.players[i].score)
+        self.events.append(Event("gameover", text=self.result))
 
     def _word_hit_floor(self, w: FallingWord, now: float) -> None:
         lane = w.lane
@@ -326,10 +416,28 @@ class Game:
             lane.alive = False
             self.words = [x for x in self.words if x.lane is not lane]
             self.events.append(Event("lane_out", lane=lane))
-            if not any(l.alive for l in self.lanes):
-                self.over = True
-                self.events.append(Event("gameover"))
+            self._check_over()
 
     def drain_events(self) -> list[Event]:
         ev, self.events = self.events, []
         return ev
+
+
+def _segment_hits_rect(x0, y0, x1, y1, cx, cy, hw, hh) -> bool:
+    """Does the segment touch the axis-aligned box centered at (cx, cy) with half sizes hw, hh?"""
+    # Liang-Barsky clipping against the box.
+    dx, dy = x1 - x0, y1 - y0
+    t0, t1 = 0.0, 1.0
+    for p, q in ((-dx, x0 - (cx - hw)), (dx, (cx + hw) - x0), (-dy, y0 - (cy - hh)), (dy, (cy + hh) - y0)):
+        if p == 0:
+            if q < 0:
+                return False
+            continue
+        r = q / p
+        if p < 0:
+            t0 = max(t0, r)
+        else:
+            t1 = min(t1, r)
+        if t0 > t1:
+            return False
+    return True

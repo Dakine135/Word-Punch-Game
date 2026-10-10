@@ -22,6 +22,7 @@ class Track:
     level_key: str
     rules: dict
     owner: int | None = None  # player index, or None for a shared track
+    finished: bool = False   # mastered a level during this round ("level" round goal)
     good: Counter = field(default_factory=Counter)    # fast reads at the current level
     misses: Counter = field(default_factory=Counter)  # misses ever (weights spaced repetition)
 

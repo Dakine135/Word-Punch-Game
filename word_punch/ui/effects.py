@@ -37,6 +37,32 @@ class Ring:
 
 
 @dataclass
+class Sprite:
+    """A flying image (e.g. half of a sliced word block)."""
+    img: pygame.Surface
+    x: float
+    y: float
+    vx: float
+    vy: float
+    rot: float
+    vrot: float
+    life: float
+    max_life: float
+
+
+@dataclass
+class Streak:
+    """A bright slash line that fades out."""
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    color: tuple
+    life: float
+    max_life: float
+
+
+@dataclass
 class FloatText:
     text: str
     x: float
@@ -53,6 +79,8 @@ class Effects:
     def __init__(self):
         self.particles: list[Particle] = []
         self.rings: list[Ring] = []
+        self.sprites: list[Sprite] = []
+        self.streaks: list[Streak] = []
         self.texts: list[FloatText] = []
         self.flash_color = None
         self.flash_life = 0.0
@@ -87,6 +115,26 @@ class Effects:
                                            random.uniform(-40, 40), random.uniform(150, 300),
                                            life, life, c, random.uniform(0.6, 1.0) * size, gravity=0))
 
+    def split(self, img: pygame.Surface, x: float, y: float, angle: float, speed: float = 420) -> None:
+        """Cut a block image in two along the swipe and send the halves flying apart."""
+        w, h = img.get_size()
+        horizontal = abs(math.cos(angle)) >= abs(math.sin(angle))  # swipe mostly sideways -> cut top/bottom
+        if horizontal:
+            parts = [(img.subsurface((0, 0, w, h // 2)).copy(), 0, -h / 4, (0, -1)),
+                     (img.subsurface((0, h // 2, w, h - h // 2)).copy(), 0, h / 4, (0, 1))]
+        else:
+            parts = [(img.subsurface((0, 0, w // 2, h)).copy(), -w / 4, 0, (-1, 0)),
+                     (img.subsurface((w // 2, 0, w - w // 2, h)).copy(), w / 4, 0, (1, 0))]
+        dx, dy = math.cos(angle), math.sin(angle)  # carry some of the swipe's motion
+        for part, ox, oy, (nx, ny) in parts:
+            vx = nx * speed * 0.6 + dx * speed * 0.5 + random.uniform(-60, 60)
+            vy = ny * speed * 0.6 + dy * speed * 0.3 - speed * 0.5
+            spin = random.uniform(120, 300) * (1 if (nx + ny) > 0 else -1)
+            self.sprites.append(Sprite(part, x + ox, y + oy, vx, vy, 0.0, spin, 1.3, 1.3))
+
+    def streak(self, x0, y0, x1, y1, color, life=0.25):
+        self.streaks.append(Streak(x0, y0, x1, y1, color, life, life))
+
     def sparkle(self, x, y, color, n=12):
         self.burst(x, y, [color, (255, 255, 255)], n=n, speed=220, size=6, life=0.5)
 
@@ -106,6 +154,16 @@ class Effects:
         for r in self.rings:
             r.life -= dt
         self.rings = [r for r in self.rings if r.life > 0]
+        for s in self.sprites:
+            s.life -= dt
+            s.x += s.vx * dt
+            s.y += s.vy * dt
+            s.vy += 1500 * dt
+            s.rot += s.vrot * dt
+        self.sprites = [s for s in self.sprites if s.life > 0]
+        for s in self.streaks:
+            s.life -= dt
+        self.streaks = [s for s in self.streaks if s.life > 0]
         for t in self.texts:
             t.life -= dt
             t.y -= t.rise * dt
@@ -114,6 +172,18 @@ class Effects:
         self.shake = max(0.0, self.shake - dt * 30)
 
     def draw(self, surface: pygame.Surface):
+        for s in self.sprites:
+            img = pygame.transform.rotate(s.img, s.rot)
+            img.set_alpha(int(255 * min(1.0, s.life / s.max_life * 2.5)))
+            surface.blit(img, img.get_rect(center=(int(s.x), int(s.y))))
+        for st in self.streaks:
+            k = st.life / st.max_life
+            # extend the line a bit past both ends, like a blade flash
+            dx, dy = st.x1 - st.x0, st.y1 - st.y0
+            a = (st.x0 - dx * 0.3, st.y0 - dy * 0.3)
+            b = (st.x1 + dx * 0.3, st.y1 + dy * 0.3)
+            pygame.draw.line(surface, st.color, a, b, max(2, int(18 * k)))
+            pygame.draw.line(surface, (255, 255, 255), a, b, max(1, int(7 * k)))
         for ring in self.rings:
             k = 1 - ring.life / ring.max_life  # 0 -> 1
             radius = int(ring.r0 + (ring.r1 - ring.r0) * (1 - (1 - k) ** 2))  # ease out

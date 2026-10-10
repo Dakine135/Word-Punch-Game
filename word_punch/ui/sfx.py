@@ -69,6 +69,10 @@ class Sfx:
                 "bounce": _sound(_tone([lambda t: 200 + 400 * t], 0.25, 0.15), 0.3),
                 "levelup": _sound(np.concatenate([_tone([f], 0.12, 0.1) for f in (523, 659, 784, 1047)]
                                                  + [_tone([1047, 1568], 0.5, 0.3)]), 0.4),
+                # swish: bright noise sweeping down
+                "slash": _sound(_noise(0.22, 0.06) * 0.6 + _tone([lambda t: 1800 - 5000 * t], 0.22, 0.08), 0.35),
+                "win": _sound(np.concatenate([_tone([f, f * 1.5], 0.14, 0.12) for f in (523, 659, 784)]
+                                             + [_tone([1047, 1319, 1568], 0.9, 0.5)]), 0.45),
                 "gameover": _sound(np.concatenate([_tone([f], 0.22, 0.2, "square") for f in (392, 330, 262)]), 0.25),
             }
             self.ok = True

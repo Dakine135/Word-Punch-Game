@@ -28,6 +28,7 @@ min_speed = 3.5          # ...at this many shoulder-widths per second
 above_shoulder = true    # and end above shoulder height
 cooldown_s = 0.4
 min_visibility = 0.4
+slice_speed = 5.0        # slice mode: hand speed (shoulder-widths per second) that counts as a swipe
 
 [speech]
 model = "models/vosk-model-small-en-us-0.15"
@@ -49,6 +50,11 @@ skeletons = true     # draw each player's body skeleton over the camera
 
 [rules]
 lives = 3                # per lane in split mode, shared in co-op / competitive
+round_end = "words"      # "words" = after round_words words, "time" = after round_minutes,
+                         # "level" = when the level is mastered, "lives" = until lives run out
+round_words = 15         # per kid (co-op: per kid, added together; race: first to this many wins)
+round_minutes = 3
+style = "punch"          # "punch" = fist rockets, "slice" = swipe through the words
 gentle = false           # true = no lives; missed words bounce back and get read aloud
 mastery_hits = 2         # each word read this many times (fast enough) -> next level
 mastery_read_s = 4.0     # a read only counts toward mastery if it's this fast

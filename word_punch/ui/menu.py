@@ -134,10 +134,11 @@ class Menu:
     """Owns the start screens. step() returns a start request when it's time to play."""
 
     def __init__(self, renderer: Renderer, size: tuple[int, int], store: ProfileStore, bank: WordBank,
-                 gentle: bool = False, max_players: int = 3):
+                 gentle: bool = False, max_players: int = 3, style: str = "punch"):
         self.r, (self.w, self.h) = renderer, size
         self.store, self.bank = store, bank
         self.gentle = gentle
+        self.style = style
         self.max_players = max_players
         self.joined: list[Profile] = []
         self.mode = "split"
@@ -193,11 +194,17 @@ class Menu:
         buttons = [Button(f"mode:{m}", pygame.Rect(x0 + i * (bw + gap), 190, bw, bh), label, sub,
                           (200, 120, 40) if m == "competitive" else (60, 120, 200) if m == "coop" else (70, 160, 90))
                    for i, (m, label, sub) in enumerate(modes)]
-        buttons.append(Button("gentle", pygame.Rect(self.w // 2 - 380, 450, 360, 90),
-                              "No lives" if self.gentle else "3 lives",
+        bw2, gap2 = 300, 30
+        x0 = self.w // 2 - (3 * bw2 + 2 * gap2) // 2
+        buttons.append(Button("style", pygame.Rect(x0, 450, bw2, 90),
+                              "Slice!" if self.style == "slice" else "Punch!",
+                              "swipe through words" if self.style == "slice" else "rocket punches",
+                              (200, 70, 90) if self.style == "slice" else (220, 130, 40)))
+        buttons.append(Button("gentle", pygame.Rect(x0 + bw2 + gap2, 450, bw2, 90),
+                              "No lives" if self.gentle else "Lives",
                               "words come back" if self.gentle else "tap to change",
                               (150, 90, 170), selected=self.gentle))
-        buttons.append(Button("back", pygame.Rect(self.w // 2 + 20, 450, 360, 90), "Back", "", (90, 90, 110)))
+        buttons.append(Button("back", pygame.Rect(x0 + 2 * (bw2 + gap2), 450, bw2, 90), "Back", "", (90, 90, 110)))
         return buttons
 
     # ---- per frame -----------------------------------------------------------------
@@ -210,7 +217,8 @@ class Menu:
         if self.screen == "countdown":
             if now >= self.countdown_until:
                 self.screen = "who"
-                return {"profiles": list(self.joined), "mode": self.mode, "gentle": self.gentle}
+                return {"profiles": list(self.joined), "mode": self.mode, "gentle": self.gentle,
+                        "style": self.style}
             return None
 
         if self.screen == "settings":
@@ -247,6 +255,8 @@ class Menu:
             self.countdown_until = now + 3.5
         elif fired.key == "gentle":
             self.gentle = not self.gentle
+        elif fired.key == "style":
+            self.style = "slice" if self.style == "punch" else "punch"
         elif fired.key == "back":
             self.screen = "who"
         elif fired.key == "settings":
@@ -260,8 +270,8 @@ class Menu:
         old = {(b.key, id(b.data) if b.data else b.label): b for b in getattr(self, "_buttons", [])}
         for b in buttons:
             prev = old.get((b.key, id(b.data) if b.data else b.label))
-            if prev is None and b.key == "gentle":
-                prev = next((o for o in old.values() if o.key == "gentle"), None)
+            if prev is None and b.key in ("gentle", "style"):
+                prev = next((o for o in old.values() if o.key == b.key), None)
             if prev is None and b.key == "next":
                 prev = next((o for o in old.values() if o.key == "next"), None)
             if prev:
@@ -314,7 +324,8 @@ class Menu:
             label = r.hud_font.render(f"Stand left to right:   {order}", True, WHITE)
             surface.blit(label, label.get_rect(center=(self.w // 2, self.h - 100)))
         mode_name = {"split": "Own sides", "coop": "Team up", "competitive": "Race"}[self.mode]
-        sub = r.hud_font.render(f"{mode_name}  -  {'no lives' if self.gentle else '3 lives'}", True, DIM)
+        style = "slice" if self.style == "slice" else "punch"
+        sub = r.hud_font.render(f"{mode_name}  -  {style}  -  {'no lives' if self.gentle else 'lives'}", True, DIM)
         surface.blit(sub, sub.get_rect(center=(self.w // 2, 120)))
 
 

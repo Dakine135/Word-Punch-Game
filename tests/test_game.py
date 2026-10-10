@@ -227,3 +227,92 @@ def test_listen_tokens(bank):
     assert {"a", "uh"} <= bank.listen_tokens("a", False)
     assert "r" in bank.listen_tokens("are", False)            # heard as the letter name
     assert {"bee", "but"} <= bank.listen_tokens("B", True)     # letter name + sound
+
+
+def read_and_punch(g, lane, t, player=0):
+    """Unlock and break the lowest word in a lane; returns the new time."""
+    ws = sorted([w for w in g.words if w.lane is lane], key=lambda w: -w.y)
+    if not ws:
+        return run(g, 0.5, t)
+    w = ws[0]
+    g.heard(w.text if not w.is_letter else g.bank.letter_names[w.text.lower()][0], t)
+    g.punch(player, w.x, t)
+    return run(g, 0.6, t)
+
+
+def test_split_round_ends_after_words_per_lane(bank):
+    g = make_game(bank, levels=("k2", "letters"), round_end="words", round_words=3, gentle=True)
+    t = run(g, 2)
+    for _ in range(40):
+        if g.lanes[0].done:
+            break
+        t = read_and_punch(g, g.lanes[0], t, 0)
+    assert g.lanes[0].done and not g.lanes[0].alive and g.lanes[0].broken == 3
+    assert not g.over                     # the other kid is still playing
+    assert "lane_done" in kinds(g)
+    for _ in range(60):
+        if g.over:
+            break
+        t = read_and_punch(g, g.lanes[1], t, 1)
+    assert g.over and g.result == "complete"
+
+
+def test_race_first_to_goal_wins(bank):
+    g = make_game(bank, mode="competitive", levels=("k2", "k2"), round_end="words", round_words=2, gentle=True)
+    t = run(g, 2)
+    for _ in range(40):
+        if g.over:
+            break
+        t = read_and_punch(g, g.lanes[0], t, player=1)
+    assert g.over and g.result == "complete" and g.winner == 1
+
+
+def test_coop_goal_is_shared(bank):
+    g = make_game(bank, mode="coop", levels=("k2", "letters"), round_end="words", round_words=2, gentle=True)
+    assert g.word_goal(g.lanes[0]) == 4
+
+
+def test_time_round(bank):
+    g = make_game(bank, mode="coop", levels=("k2",), round_end="time", round_minutes=0.5, gentle=True)
+    t = run(g, 20)
+    assert not g.over and 9 < g.time_left(t) < 11
+    run(g, 11, t)
+    assert g.over and g.result == "complete"
+
+
+def test_level_round_ends_on_mastery(bank):
+    g = make_game(bank, levels=("k1",), round_end="level", mastery_hits=1, gentle=True, review_chance=0.0)
+    t = run(g, 2)
+    for _ in range(80):
+        if g.over:
+            break
+        t = read_and_punch(g, g.lanes[0], t, 0)
+    assert g.over and g.result == "complete"
+    assert g.lanes[0].tracks[0].level_key == "k2"  # still levels up
+
+
+def test_lives_round_reports_out(bank):
+    g = make_game(bank, mode="coop", levels=("k2",), lives=1, round_end="lives")
+    run(g, 40)
+    assert g.over and g.result == "out"
+
+
+def test_slice_cuts_unlocked_and_clangs_locked(bank):
+    g = make_game(bank, mode="coop", levels=("k2",), gentle=True)
+    t = run(g, 3)
+    w = g.words[0]
+    g.slice(0, w.x - 200, w.y, w.x + 200, w.y, t)       # locked: clang only
+    assert w in g.words and "clang" in kinds(g)
+    g.heard(w.text, t)
+    cut = g.slice(0, w.x - 200, w.y + 5, w.x + 200, w.y - 5, t + 1)
+    assert cut == [w] and w not in g.words
+    ev = [e for e in g.drain_events() if e.kind == "break"]
+    assert ev and ev[0].style == "slice"
+
+
+def test_slice_misses_when_swipe_is_elsewhere(bank):
+    g = make_game(bank, mode="coop", levels=("k2",), gentle=True)
+    t = run(g, 3)
+    w = g.words[0]
+    g.heard(w.text, t)
+    assert g.slice(0, w.x - 200, w.y + 300, w.x + 200, w.y + 300, t) == []

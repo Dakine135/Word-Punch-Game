@@ -13,6 +13,10 @@ A reading game: sight words (or letters) fall from the sky over a mirrored camer
 - Scoring: harder words, faster reading and faster punching earn more points, plus combos
 - Speed adapts to how fast the kids read, and the level goes up once every word is mastered
 - Lives (default) or `--gentle`: no game over, and missed words come back
+- **Round goals** (Settings): after N words, after N minutes, or when the level is mastered;
+  the race mode is first to the goal. Each side shows "Finished!", then "Round complete!"
+- **Punch or Slice**: rocket punches, or swipe through words Fruit-Ninja style (picked on the
+  mode screen; mouse drag slices in `--sim`)
 
 ## Setup (Windows laptop)
 

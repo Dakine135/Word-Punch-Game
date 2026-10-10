@@ -72,6 +72,30 @@ class Renderer:
                 color = (90, 90, 90)
             pygame.draw.line(surface, color, (int(lane.x0), fy), (int(lane.x1), fy), 6)
 
+    def block_image(self, w) -> pygame.Surface:
+        """A plain gold (unlocked) word block, used for sliced halves."""
+        img = pygame.Surface((w.w, w.h), pygame.SRCALPHA)
+        rect = img.get_rect()
+        radius = int(w.h * 0.3)
+        pygame.draw.rect(img, GOLD, rect, border_radius=radius)
+        pygame.draw.rect(img, WHITE, rect, 4, border_radius=radius)
+        f = self.letter_font if w.is_letter else self.word_font
+        txt = self._text(w.text, f, INK)
+        img.blit(txt, txt.get_rect(center=rect.center))
+        return img
+
+    def draw_blades(self, surface: pygame.Surface, blades: dict, now: float, life: float = 0.22) -> None:
+        """Glowing trails behind fast-moving hands (slice mode). blades: key -> [(t, x, y, player)]."""
+        for pts in blades.values():
+            pts = [p for p in pts if now - p[0] < life]
+            if len(pts) < 2:
+                continue
+            color = PLAYER_COLORS[pts[-1][3] % 3]
+            for (t0, x0, y0, _), (t1, x1, y1, _) in zip(pts, pts[1:]):
+                k = 1 - (now - t1) / life
+                pygame.draw.line(surface, color, (x0, y0), (x1, y1), max(2, int(22 * k)))
+                pygame.draw.line(surface, WHITE, (x0, y0), (x1, y1), max(1, int(8 * k)))
+
     def draw_words(self, surface: pygame.Surface, game: Game, now: float) -> None:
         for w in game.words:
             rect = pygame.Rect(0, 0, w.w, w.h)
@@ -154,7 +178,14 @@ class Renderer:
     def hud_height(self) -> int:
         return int(self.h * 0.19)
 
-    def draw_hud(self, surface: pygame.Surface, game: Game) -> None:
+    def round_progress(self, game: Game, lane, player=None) -> str:
+        if game.round_end != "words":
+            return ""
+        if game.mode == "competitive" and player is not None:
+            return f"{player.broken}/{game.round_words}"
+        return f"{lane.broken}/{game.word_goal(lane)}"
+
+    def draw_hud(self, surface: pygame.Surface, game: Game, now: float = 0.0) -> None:
         pad = 14
         # Words emerge from behind this strip.
         strip = pygame.Surface((self.w, self.hud_height), pygame.SRCALPHA)
@@ -174,8 +205,15 @@ class Renderer:
             self._lives_and_level(surface, game, lane, self.w - pad, pad, align_right=True)
             if game.mode == "coop":
                 total = sum(p.score for p in game.players)
-                t = self._text(f"Team {total}", self.hud_font, GOLD)
+                prog = self.round_progress(game, lane)
+                t = self._text(f"Team {total}" + (f"   {prog} words" if prog else ""), self.hud_font, GOLD)
                 surface.blit(t, (self.w // 2 - t.get_width() // 2, pad))
+        left = game.time_left(now) if now else None
+        if left is not None:
+            m, s = divmod(int(left + 0.999), 60)
+            color = (255, 120, 120) if left < 15 else WHITE
+            t = self._text(f"{m}:{s:02d}", self.hud_font, color)
+            surface.blit(t, t.get_rect(midtop=(self.w // 2, pad + (40 if game.mode == "coop" else 0))))
 
     def _player_panel(self, surface, game, p, lane, x, y) -> int:
         color = PLAYER_COLORS[p.index % 3]
@@ -184,6 +222,12 @@ class Renderer:
         surface.blit(name, (x, y))
         surface.blit(score, (x + name.get_width() + 14, y))
         end = x + name.get_width() + 14 + score.get_width()
+        lane_for = lane if lane is not None else game.lanes[0]
+        prog = self.round_progress(game, lane_for, p) if (lane is not None or game.mode == "competitive") else ""
+        if prog:
+            t = self._text(prog, self.small_font, GOLD)
+            surface.blit(t, (end + 14, y + 8))
+            end += 14 + t.get_width()
         if p.combo >= 2:
             c = self._text(f"x{p.combo} combo", self.small_font, GOLD)
             surface.blit(c, (x, y + name.get_height()))
@@ -216,27 +260,50 @@ class Renderer:
         pygame.draw.rect(surface, GOLD, fill, border_radius=4)
         return tx
 
-    def draw_lane_out(self, surface: pygame.Surface, game: Game) -> None:
+    def draw_lane_out(self, surface: pygame.Surface, game: Game, now: float = 0.0) -> None:
         for lane in game.lanes:
             if lane.alive or game.over:
                 continue
             shade = pygame.Surface((int(lane.x1 - lane.x0), self.h), pygame.SRCALPHA)
-            shade.fill((0, 0, 0, 150))
+            shade.fill((40, 30, 0, 140) if lane.done else (0, 0, 0, 150))
             surface.blit(shade, (int(lane.x0), 0))
-            t = self._text("Great job!", self.pop_font, WHITE)
-            surface.blit(t, t.get_rect(center=((lane.x0 + lane.x1) / 2, self.h / 2)))
+            cx = (lane.x0 + lane.x1) / 2
+            if lane.done:
+                bob = math.sin(now * 3) * 8
+                t = self._text("Finished!", self.big_font, GOLD)
+                surface.blit(t, t.get_rect(center=(cx, self.h / 2 - 30 + bob)))
+                self._star(surface, cx, self.h / 2 + 70 + bob, 40, now)
+            else:
+                t = self._text("Great job!", self.pop_font, WHITE)
+                surface.blit(t, t.get_rect(center=(cx, self.h / 2)))
+
+    def _star(self, surface, cx, cy, r, now, color=GOLD):
+        pts = []
+        spin = now * 0.8
+        for i in range(10):
+            rad = r if i % 2 == 0 else r * 0.45
+            a = spin + i * math.pi / 5 - math.pi / 2
+            pts.append((cx + math.cos(a) * rad, cy + math.sin(a) * rad))
+        pygame.draw.polygon(surface, color, pts)
+        pygame.draw.polygon(surface, WHITE, pts, 3)
 
     def draw_game_over(self, surface: pygame.Surface, game: Game, hint: str) -> None:
         shade = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
         shade.fill((0, 0, 0, 170))
         surface.blit(shade, (0, 0))
-        title = self._text("Game Over!", self.big_font, GOLD)
+        if game.result == "complete":
+            if game.mode == "competitive" and game.winner is not None and len(game.players) > 1:
+                text = f"{game.players[game.winner].name} wins!"
+            else:
+                text = "Round complete!"
+        else:
+            text = "Game Over!"
+        title = self._text(text, self.big_font, GOLD)
         surface.blit(title, title.get_rect(center=(self.w // 2, int(self.h * 0.2))))
         ranked = sorted(game.players, key=lambda p: -p.score)
         for i, p in enumerate(ranked):
-            crown = "★ " if i == 0 and game.mode == "competitive" and len(ranked) > 1 else ""
             words = "word" if p.broken == 1 else "words"
-            line = f"{crown}{p.name}:  {p.score} points   {p.broken} {words}   best combo x{p.best_combo}"
+            line = f"{p.name}:  {p.score} points   {p.broken} {words}   best combo x{p.best_combo}"
             t = self._text(line, self.hud_font, PLAYER_COLORS[p.index % 3])
             surface.blit(t, t.get_rect(center=(self.w // 2, int(self.h * (0.4 + 0.09 * i)))))
         h = self._text(hint, self.hud_font, WHITE)
