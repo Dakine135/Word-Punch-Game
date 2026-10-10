@@ -15,6 +15,8 @@ POSE = {
     "pose_landmarker_full.task":
         "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",
 }
+VOICE = "en_US-lessac-medium"  # Piper voice for reading words aloud
+VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/"
 VOSK_NAME = "vosk-model-small-en-us-0.15"
 VOSK_URL = f"https://alphacephei.com/vosk/models/{VOSK_NAME}.zip"
 
@@ -47,6 +49,10 @@ def main() -> int:
         with zipfile.ZipFile(zip_path) as z:
             z.extractall(MODELS)
         zip_path.unlink()
+    for ext in (".onnx", ".onnx.json"):
+        dest = MODELS / f"{VOICE}{ext}"
+        if not dest.exists():
+            download(VOICE_URL + f"{VOICE}{ext}", dest)
     print("models ready in", MODELS)
     return 0
 

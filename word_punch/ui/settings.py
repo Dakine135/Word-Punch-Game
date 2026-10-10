@@ -127,6 +127,8 @@ class SettingsScreen:
             header("DISPLAY & SOUND"),
             Item("Show skeletons", "game", "skeletons", ON_OFF, note="each kid's body drawn in their color"),
             Item("Sound volume", "game", "volume", [(v, f"{v}%") for v in range(0, 101, 10)]),
+            Item("Voice volume", "voice", "volume", [(v, f"{v}%") for v in range(0, 101, 10)]),
+            Item("Read missed words aloud", "voice", "read_missed", ON_OFF),
             Item("Start fullscreen", "game", "fullscreen", ON_OFF),
             Item("Show debug info", "game", "debug", ON_OFF),
         ]

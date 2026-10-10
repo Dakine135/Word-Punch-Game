@@ -20,6 +20,7 @@ from .ui.render import GOLD, PLAYER_COLORS, Renderer
 from .ui.settings import SettingsScreen
 from .ui.skeleton import SkeletonLayer
 from .ui.sfx import Sfx
+from .voice import Voice, spoken
 from .words import WordBank
 
 HELP = """With no --player, a start screen lets the kids pick their names (saved profiles).
@@ -87,6 +88,7 @@ class App:
         self.effects = Effects()
         self.sfx = Sfx()
         self.sfx.set_volume(cfg["game"].get("volume", 100))
+        self.voice = Voice(cfg["voice"])
         self.debug = args.debug or cfg["game"].get("debug", False)
         self.pending_restart: dict[str, float] = {}
         self.skeletons = SkeletonLayer(self.size)
@@ -149,7 +151,10 @@ class App:
         """Called by the settings screen after it changed (and saved) a value."""
         if restart:
             self.pending_restart[restart] = time.time() + 0.8  # wait for the parent to stop clicking
-        if section == "game" and key == "volume":
+        if section == "voice" and key == "volume":
+            self.voice.set_volume(self.cfg["voice"]["volume"])
+            self.speak("Great job!")
+        elif section == "game" and key == "volume":
             self.sfx.set_volume(self.cfg["game"]["volume"])
             self.sfx.play("unlock")
         elif section == "game" and key == "debug":
@@ -180,9 +185,24 @@ class App:
         self.game_started = time.time()
         self.over_at = None
         self.saved_final = False
+        self.prepare_voice()
         self.over_buttons = []
         if self.speech:
             self._sync_vocab()
+
+    def prepare_voice(self) -> None:
+        """Make sure every word that can appear this game has a voice clip (background)."""
+        texts = []
+        for key in self.game.levels_in_play():
+            lvl = self.bank.level(key)
+            texts += [spoken(w, lvl.is_letters) for w in lvl.words]
+        self.voice.prepare(texts + PHRASES)
+
+    def speak(self, *texts: str) -> None:
+        """Say something and keep the mic from hearing it."""
+        seconds = self.voice.say(*texts)
+        if seconds and self.speech:
+            self.speech.mute(seconds + 0.3)
 
     def start_from_menu(self, req: dict) -> None:
         profiles = req["profiles"]
@@ -516,11 +536,14 @@ class App:
             elif k == "miss":
                 self.sfx.play("miss")
                 fx.flash((255, 40, 40))
+                if self.cfg["voice"].get("read_missed", True) and ev.word:
+                    self.speak(spoken(ev.word.text, ev.word.is_letter))
             elif k == "bounce":
                 self.sfx.play("bounce")
             elif k == "say":
-                # Phase 4: play the recorded voice for ev.text and mute the mic meanwhile.
                 fx.float_text(ev.text, ev.word.x, ev.word.y + 60, (255, 255, 255), r.pop_font, life=1.5)
+                if self.cfg["voice"].get("read_missed", True):
+                    self.speak("This word says", spoken(ev.word.text, ev.word.is_letter))
             elif k == "levelup":
                 self.sfx.play("levelup")
                 self.save_progress(finished=False)
@@ -677,6 +700,7 @@ class App:
                 if not self.handle_events(now):
                     break
                 self.apply_restarts(now)
+                self.voice.update()
                 self._update_cursor()
                 self.poll_speech(now)
                 self.poll_vision(now)
@@ -716,6 +740,10 @@ class App:
                 self.speech.stop()
             pygame.quit()
         return 0
+
+
+PHRASES = ["This word says", "Find", "Great job!", "You did it!", "Round complete!", "Try again!",
+           "Oops! That says", "Level up!", "Read the words, then punch!", "Read the words, then slice!"]
 
 
 def cfg_device(cfg: dict) -> str:

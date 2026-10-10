@@ -48,6 +48,13 @@ volume = 100         # sound effects, 0-100
 debug = false        # show fps / camera / mic info (F3 toggles)
 skeletons = true     # draw each player's body skeleton over the camera
 
+[voice]
+enabled = true
+model = "models/en_US-lessac-medium.onnx"
+volume = 100
+slowness = 1.15          # >1 speaks a little slower (good for kids)
+read_missed = true       # read a word aloud when it's missed
+
 [rules]
 lives = 3                # per lane in split mode, shared in co-op / competitive
 round_end = "words"      # "words" = after round_words words, "time" = after round_minutes,
