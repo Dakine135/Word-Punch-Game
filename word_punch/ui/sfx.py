@@ -57,6 +57,9 @@ class Sfx:
         try:
             if not pygame.mixer.get_init():
                 pygame.mixer.init(RATE, -16, 2, 512)
+            # channel 0 = music, 1 = voice; effects never steal them
+            pygame.mixer.set_num_channels(16)
+            pygame.mixer.set_reserved(2)
             self.sounds = {
                 # bright two-note chime: you read it!
                 "unlock": _sound(np.concatenate([_tone([880, 1320], 0.09, 0.08),
@@ -70,6 +73,7 @@ class Sfx:
                 "levelup": _sound(np.concatenate([_tone([f], 0.12, 0.1) for f in (523, 659, 784, 1047)]
                                                  + [_tone([1047, 1568], 0.5, 0.3)]), 0.4),
                 # swish: bright noise sweeping down
+                "power": _sound(np.concatenate([_tone([f, f * 2], 0.07, 0.06) for f in (660, 880, 1100, 1320, 1760)]), 0.35),
                 "slash": _sound(_noise(0.22, 0.06) * 0.6 + _tone([lambda t: 1800 - 5000 * t], 0.22, 0.08), 0.35),
                 "win": _sound(np.concatenate([_tone([f, f * 1.5], 0.14, 0.12) for f in (523, 659, 784)]
                                              + [_tone([1047, 1319, 1568], 0.9, 0.5)]), 0.45),

@@ -28,6 +28,9 @@ class Profile:
     word_stats: dict = field(default_factory=dict)  # word -> {"seen","read","missed","time"} lifetime
     history: list = field(default_factory=list)     # one entry per finished round
     levels_reached: dict = field(default_factory=dict)  # level key -> first date reached
+    stars: int = 0                                  # lifetime stars (unlock hats and colours)
+    hat: str = "party"
+    color: str = "team"
 
     @property
     def slug(self) -> str:
@@ -107,5 +110,6 @@ def update_from_game(profile: Profile, track, player, finished: bool, game=None,
     entry = {"date": time.strftime("%Y-%m-%d %H:%M"), "score": player.score, "words": player.broken,
              "misses": misses, "best_combo": player.best_combo, "level": profile.level}
     entry.update(info or {})
+    profile.stars += int(entry.get("stars", 0))
     profile.history.append(entry)
     del profile.history[:-200]

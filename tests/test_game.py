@@ -316,3 +316,45 @@ def test_slice_misses_when_swipe_is_elsewhere(bank):
     w = g.words[0]
     g.heard(w.text, t)
     assert g.slice(0, w.x - 200, w.y + 300, w.x + 200, w.y + 300, t) == []
+
+
+def force_power(g, power):
+    t = run(g, 3)
+    w = g.words[0]
+    w.power = power
+    g.heard(w.text, t)
+    g.punch(0, w.x, t)
+    return w, run(g, 0.5, t)
+
+
+def test_gold_word_doubles_points(bank):
+    a = make_game(bank, mode="coop", levels=("k2",), gentle=True, powerups=False)
+    b = make_game(bank, mode="coop", levels=("k2",), gentle=True, powerups=False)
+    force_power(a, "")
+    force_power(b, "gold")
+    assert b.players[0].score == 2 * a.players[0].score
+    assert any(e.kind == "power" and e.text == "gold" for e in b.drain_events())
+
+
+def test_freeze_stops_falling(bank):
+    g = make_game(bank, mode="coop", levels=("k2",), gentle=True, powerups=False)
+    w, t = force_power(g, "freeze")
+    run(g, 1.0, t)
+    ys = [x.y for x in g.words]
+    run(g, 2.0, t + 1.0)
+    assert [x.y for x in g.words][: len(ys)] == ys  # nothing moved while frozen
+
+
+def test_giant_gloves_make_big_rockets(bank):
+    g = make_game(bank, mode="coop", levels=("k2",), gentle=True, powerups=False)
+    w, t = force_power(g, "giant")
+    r = g.punch(0, 100, t)
+    assert r.radius > g.h * 0.045 * 2
+
+
+def test_stars(bank):
+    from word_punch.rewards import stars_for_round
+    assert stars_for_round(2, False, 0, 0) == 0
+    assert stars_for_round(6, False, 5, 2) == 1
+    assert stars_for_round(15, True, 3, 4) == 2
+    assert stars_for_round(15, True, 1, 6) == 3

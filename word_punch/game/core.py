@@ -24,6 +24,8 @@ from .track import Track
 
 MODES = ("split", "coop", "competitive")
 ROUND_ENDS = ("lives", "words", "time", "level")
+POWERS = ("gold", "freeze", "giant")  # double points / stop falling 5 s / giant gloves 10 s
+FREEZE_S, GIANT_S = 5.0, 10.0
 
 Measure = Callable[[str, bool], tuple[int, int]]  # (text, is_letter) -> (w, h) of the word block
 
@@ -57,6 +59,7 @@ class FallingWord:
     read_time: float = 0.0
     misses: int = 0  # times it hit the floor (gentle mode)
     last_clang: float = -1e9
+    power: str = ""  # "" or one of POWERS
 
 
 @dataclass(eq=False)
@@ -82,6 +85,8 @@ class Lane:
     alive: bool = True                 # still playing (False once out of lives or finished)
     done: bool = False                 # finished the round's goal
     broken: int = 0                    # words broken in this lane this round
+    freeze_until: float = 0.0          # power-up: words stop falling
+    giant_until: float = 0.0           # power-up: giant gloves / wide slices
     spawn_timer: float = 0.0
     next_track: itertools.cycle = None  # round-robin over tracks (co-op with mixed levels)
 
@@ -186,6 +191,19 @@ class Game:
             text, {"seen": 0, "read": 0, "missed": 0, "time": 0.0})
         s[key] += amount
 
+    def stars(self, player: int) -> int:
+        """0-3 stars for this round (see rewards.stars_for_round)."""
+        from ..rewards import stars_for_round
+        p = self.players[player]
+        if self.round_end == "lives":
+            reached = p.broken >= self.round_words
+        elif self.mode == "competitive":
+            reached = self.winner == player
+        else:
+            reached = self.lane_of_player(player).done
+        misses = sum(s["missed"] for s in self.word_stats.get(player, {}).values())
+        return stars_for_round(p.broken, reached, misses, p.best_combo)
+
     def lane_at(self, x: float) -> Lane:
         for lane in self.lanes:
             if lane.x0 <= x < lane.x1:
@@ -238,7 +256,8 @@ class Game:
         if not lane.alive or player >= len(self.players):
             return None
         start_y = self.floor if self.rules["rocket_from"] == "bottom" or y is None else y
-        rocket = Rocket(player, x, start_y, lane, radius=self.h * 0.045)
+        radius = self.h * 0.045 * (2.4 if now < lane.giant_until else 1.0)
+        rocket = Rocket(player, x, start_y, lane, radius=radius)
         self.rockets.append(rocket)
         self.events.append(Event("launch", player=player, x=x, y=start_y, lane=lane))
         return rocket
@@ -258,7 +277,8 @@ class Game:
         for w in list(self.words):
             if not w.lane.alive or (self.mode == "split" and w.lane is not lane):
                 continue
-            if not _segment_hits_rect(x0, y0, x1, y1, w.x, w.y, w.w / 2 + 12, w.h / 2 + 12):
+            pad = 70 if now < w.lane.giant_until else 12
+            if not _segment_hits_rect(x0, y0, x1, y1, w.x, w.y, w.w / 2 + pad, w.h / 2 + pad):
                 continue
             if w.unlocked:
                 self._break(w, player, now, style="slice", angle=angle)
@@ -294,6 +314,8 @@ class Game:
             speed = w.lane.difficulty.fall * self.h
             if w.unlocked:
                 speed *= self.diff_cfg["unlocked_slowdown"]
+            if now < w.lane.freeze_until:
+                speed = 0.0
             w.y += speed * dt
             if w.y + w.h / 2 >= self.floor:
                 self._word_hit_floor(w, now)
@@ -335,6 +357,8 @@ class Game:
                 return None
             word = FallingWord(next(self._ids), pick.text, pick.is_letter, pick.level_key,
                                pick.points, track, lane, x, -bh / 2, bw, bh, now)
+            if self.rules.get("powerups", True) and self.rng.random() < self.rules.get("powerup_chance", 0.12):
+                word.power = self.rng.choice(POWERS)
             self.words.append(word)
             self.events.append(Event("spawn", word, lane=lane))
             self._stat(track.owner, pick.text, "seen")
@@ -360,7 +384,15 @@ class Game:
         p.best_combo = max(p.best_combo, p.combo)
         p.broken += 1
         pts = scoring.points(w.base_points, w.read_time, now - w.unlocked_at, p.combo - 1, self.score_cfg)
+        if w.power == "gold":
+            pts *= 2
         p.score += pts
+        if w.power == "freeze":
+            w.lane.freeze_until = now + FREEZE_S
+        elif w.power == "giant":
+            w.lane.giant_until = now + GIANT_S
+        if w.power:
+            self.events.append(Event("power", w, player=player, lane=w.lane, text=w.power, x=w.x, y=w.y))
         self.words.remove(w)
         lane = w.lane
         lane.broken += 1

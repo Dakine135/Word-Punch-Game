@@ -45,6 +45,7 @@ height = 720
 fullscreen = false
 fps = 60
 volume = 100         # sound effects, 0-100
+music = 35           # background music, 0-100
 debug = false        # show fps / camera / mic info (F3 toggles)
 skeletons = true     # draw each player's body skeleton over the camera
 
@@ -62,6 +63,8 @@ round_end = "words"      # "words" = after round_words words, "time" = after rou
 round_words = 15         # per kid (co-op: per kid, added together; race: first to this many wins)
 round_minutes = 3
 style = "punch"          # "punch" = fist rockets, "slice" = swipe through the words
+powerups = true          # golden (x2), freeze (5 s) and giant (10 s) words
+powerup_chance = 0.12
 gentle = false           # true = no lives; missed words bounce back and get read aloud
 mastery_hits = 2         # each word read this many times (fast enough) -> next level
 mastery_read_s = 4.0     # a read only counts toward mastery if it's this fast

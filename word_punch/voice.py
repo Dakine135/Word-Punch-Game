@@ -118,7 +118,7 @@ class Voice:
             return 1.0
         self._pending_say = []
         if self.channel is None:
-            self.channel = pygame.mixer.Channel(pygame.mixer.get_num_channels() - 1)
+            self.channel = pygame.mixer.Channel(1)  # reserved for the voice (see Sfx)
         sounds = [s for s in (self._sound(t) for t in texts) if s]
         if not sounds:
             return 0.0

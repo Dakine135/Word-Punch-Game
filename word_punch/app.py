@@ -8,7 +8,7 @@ from collections import deque
 
 import pygame
 
-from . import config
+from . import config, rewards
 from .game.core import MODES, Game
 from .profiles import Profile, ProfileStore, apply_to_track, update_from_game
 from .ui import display
@@ -19,6 +19,7 @@ from .ui.mic_meter import draw_mic_meter
 from .ui.render import GOLD, PLAYER_COLORS, Renderer
 from .ui.settings import SettingsScreen
 from .ui.skeleton import SkeletonLayer
+from .ui.music import Music
 from .ui.sfx import Sfx
 from .voice import Voice, spoken
 from .words import WordBank
@@ -85,10 +86,17 @@ class App:
         self.size = (cfg["game"]["width"], cfg["game"]["height"])
         self.screen = display.open_window(self.size, fullscreen, "Word Punch")
         self.renderer = Renderer(self.size)
+        self.renderer.color_fn = self._glove_color
         self.effects = Effects()
         self.sfx = Sfx()
         self.sfx.set_volume(cfg["game"].get("volume", 100))
         self.voice = Voice(cfg["voice"])
+        self.music = Music(cfg["game"].get("music", 35))
+        self.music.play()
+        self._ducked = False
+        self.round_stars: dict = {}
+        self.round_totals: dict = {}
+        self.round_unlocks: dict = {}
         self.debug = args.debug or cfg["game"].get("debug", False)
         self.pending_restart: dict[str, float] = {}
         self.skeletons = SkeletonLayer(self.size)
@@ -154,6 +162,8 @@ class App:
         if section == "voice" and key == "volume":
             self.voice.set_volume(self.cfg["voice"]["volume"])
             self.speak("Great job!")
+        elif section == "game" and key == "music":
+            self.music.set_volume(self.cfg["game"]["music"])
         elif section == "game" and key == "volume":
             self.sfx.set_volume(self.cfg["game"]["volume"])
             self.sfx.play("unlock")
@@ -185,10 +195,44 @@ class App:
         self.game_started = time.time()
         self.over_at = None
         self.saved_final = False
+        self.round_stars, self.round_totals, self.round_unlocks = {}, {}, {}
         self.prepare_voice()
         self.over_buttons = []
         if self.speech:
             self._sync_vocab()
+
+    def _profile_of(self, player: int):
+        profs = getattr(self, "player_profiles", [])
+        return profs[player] if 0 <= player < len(profs) else None
+
+    def _glove_color(self, player: int, now: float) -> tuple:
+        prof = self._profile_of(player)
+        return rewards.glove_color(prof.color if prof else "team", PLAYER_COLORS[player % 3], now)
+
+    def stars_for(self, player: int) -> int:
+        return self.game.stars(player)
+
+    def draw_hats(self, surf: pygame.Surface) -> None:
+        """Each kid's chosen hat on their head in the camera picture."""
+        if not self.vision:
+            return
+        for s in self.tracker.slots:
+            if not s.person:
+                continue
+            if self.state == "playing":
+                idx = s.index
+                if self.game.mode == "split":
+                    x, _ = self.view.to_screen(s.person.center_x, 0.5)
+                    idx = self.game.lane_at(x).players[0]
+                prof = self._profile_of(idx)
+            else:  # menus: kids stand left to right in the order they joined
+                joined = self.menu.joined
+                prof = joined[s.index] if s.index < len(joined) else None
+            if prof is None or prof.hat == "none":
+                continue
+            pose = rewards.head_pose(s.person, self.view.to_screen)
+            if pose:
+                rewards.draw_hat(surf, prof.hat, *pose)
 
     def prepare_voice(self) -> None:
         """Make sure every word that can appear this game has a voice clip (background)."""
@@ -225,9 +269,13 @@ class App:
         """Write each kid's progress to their profile (once per game when finished)."""
         if finished and self.saved_final:
             return
+        if finished:
+            for i in range(len(self.game.players)):
+                self.round_stars[i] = self.game.stars(i)
         for i, prof in enumerate(self.player_profiles):
             if prof is None or i >= len(self.game.players):
                 continue
+            before = prof.stars
             info = {"mode": self.game.mode, "style": self.cfg["rules"].get("style", "punch"),
                     "game": getattr(self.game, "kind", "classic"),
                     "minutes": round((time.time() - self.game_started) / 60, 1),
@@ -235,6 +283,10 @@ class App:
                     "stars": self.stars_for(i) if hasattr(self, "stars_for") else 0}
             update_from_game(prof, self.game.track_for(i), self.game.players[i], finished, self.game, info)
             self.store.save(prof)
+            if finished:
+                self.round_totals[i] = prof.stars
+                self.round_unlocks[i] = [name for _, name, cost in rewards.HATS + rewards.COLORS
+                                         if before < cost <= prof.stars]
         if finished:
             self.saved_final = True
 
@@ -557,6 +609,17 @@ class App:
                 fx.float_text("LEVEL UP!", cx, self.size[1] * 0.4, GOLD, r.big_font, life=2.0, rise=20, pop=True)
                 fx.float_text(ev.text, cx, self.size[1] * 0.52, (255, 255, 255), r.pop_font, life=2.0, rise=20)
                 fx.burst(cx, self.size[1] * 0.4, [GOLD, (255, 255, 255), (255, 120, 200)], n=120, speed=700)
+            elif k == "power":
+                self.sfx.play("power")
+                lane = ev.lane
+                cx = (lane.x0 + lane.x1) / 2
+                text, color = {"gold": ("DOUBLE POINTS!", GOLD), "freeze": ("FREEZE!", (150, 225, 255)),
+                               "giant": ("GIANT BLADE!" if self.style == "slice" else "GIANT GLOVES!",
+                                         (200, 140, 255))}[ev.text]
+                fx.float_text(text, cx, self.size[1] * 0.45, color, r.big_font, life=1.6, rise=15, pop=True)
+                fx.burst(ev.x, ev.y, [color, (255, 255, 255)], n=60, speed=600)
+                if ev.text == "freeze":
+                    fx.flash((150, 220, 255))
             elif k == "vanish":
                 fx.sparkle(ev.x, ev.y, GOLD, 14)
             elif k == "lane_done":
@@ -593,6 +656,7 @@ class App:
             return
         if self.state == "menu":
             self.draw_skeletons(surf)
+            self.draw_hats(surf)
             self.menu.draw(surf, now)
             r.draw_hands(surf, self.hands, now)
             self.effects.draw(surf)
@@ -601,6 +665,7 @@ class App:
             pygame.display.flip()
             return
         self.draw_skeletons(surf)
+        self.draw_hats(surf)
         r.draw_background(surf, self.game)
         r.draw_words(surf, self.game, now)
         self.effects.draw(surf)
@@ -627,7 +692,9 @@ class App:
             t = r.big_font.render("Paused", True, GOLD)
             surf.blit(t, t.get_rect(center=(self.size[0] // 2, self.size[1] // 2)))
         if self.game.over:
-            r.draw_game_over(surf, self.game, "")
+            r.draw_game_over(surf, self.game, "", stars=self.round_stars,
+                             totals=self.round_totals if any(self.player_profiles) else None,
+                             unlocks=self.round_unlocks, now=now)
             for b in self.over_buttons:
                 draw_button(surf, r, b, now)
             r.draw_say_hint(surf, "Hold your hand on a button   (Enter = play again" +
@@ -706,6 +773,9 @@ class App:
                     break
                 self.apply_restarts(now)
                 self.voice.update()
+                if self.voice.speaking() != self._ducked:
+                    self._ducked = self.voice.speaking()
+                    self.music.set_volume(self.cfg["game"].get("music", 35), duck=self._ducked)
                 self._update_cursor()
                 self.poll_speech(now)
                 self.poll_vision(now)

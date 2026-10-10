@@ -32,6 +32,12 @@ class Renderer:
         self.pop_font = font(int(self.h * 0.06))
         self.big_font = font(int(self.h * 0.11))
         self._text_cache: dict = {}
+        self.color_fn = None  # (player, now) -> glove/blade colour; set by the app (unlockable colours)
+
+    def player_color(self, player: int, now: float) -> tuple:
+        if self.color_fn:
+            return self.color_fn(player, now)
+        return PLAYER_COLORS[player % 3]
 
     # ---- sizes (the game uses these for collisions) ------------------------------
 
@@ -90,7 +96,7 @@ class Renderer:
             pts = [p for p in pts if now - p[0] < life]
             if len(pts) < 2:
                 continue
-            color = PLAYER_COLORS[pts[-1][3] % 3]
+            color = self.player_color(pts[-1][3], now)
             for (t0, x0, y0, _), (t1, x1, y1, _) in zip(pts, pts[1:]):
                 k = 1 - (now - t1) / life
                 pygame.draw.line(surface, color, (x0, y0), (x1, y1), max(2, int(22 * k)))
@@ -118,11 +124,42 @@ class Renderer:
                 pygame.draw.rect(surface, (150, 160, 200), rect, 3, border_radius=radius)
                 txt = self._text(w.text, f, WHITE)
             surface.blit(txt, txt.get_rect(center=rect.center))
+            if w.power:
+                self._power_badge(surface, w, rect, now)
+            if now < w.lane.freeze_until:
+                ice = pygame.Surface(rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(ice, (170, 230, 255, 90), ice.get_rect(), border_radius=radius)
+                surface.blit(ice, rect)
+                pygame.draw.rect(surface, (200, 240, 255), rect, 3, border_radius=radius)
             for i in range(w.misses):  # gentle mode: how many times it fell
                 pygame.draw.circle(surface, (255, 120, 120), (rect.right - 10 - 14 * i, rect.top + 10), 5)
 
+    POWER_COLORS = {"gold": (255, 190, 30), "freeze": (120, 210, 255), "giant": (190, 110, 255)}
+
+    def _power_badge(self, surface, w, rect, now) -> None:
+        """Shimmering border + a round badge: x2 (gold), snowflake (freeze), fist (giant)."""
+        color = self.POWER_COLORS[w.power]
+        k = 0.5 + 0.5 * math.sin(now * 8 + w.id)
+        pygame.draw.rect(surface, color, rect.inflate(8, 8), 4 + int(3 * k), border_radius=int(w.h * 0.34))
+        r = max(14, int(w.h * 0.26))
+        cx, cy = rect.right - 4, rect.top + 4
+        pygame.draw.circle(surface, color, (cx, cy), r)
+        pygame.draw.circle(surface, WHITE, (cx, cy), r, 3)
+        if w.power == "gold":
+            t = self._text("x2", self.small_font, INK)
+            surface.blit(t, t.get_rect(center=(cx, cy)))
+        elif w.power == "freeze":
+            for i in range(3):
+                a = i * math.pi / 3
+                dx, dy = math.cos(a) * r * 0.7, math.sin(a) * r * 0.7
+                pygame.draw.line(surface, WHITE, (cx - dx, cy - dy), (cx + dx, cy + dy), 3)
+        else:
+            g = self.glove(WHITE, int(r * 1.5))
+            surface.blit(g, g.get_rect(center=(cx, cy)))
+
     def glove(self, color: tuple, height: int) -> pygame.Surface:
         """A cartoon boxing glove pointing up, cached per color/size."""
+        color = tuple(min(255, (c // 24) * 24 + 12) for c in color)  # animated colours: bounded cache
         key = ("glove", color, height)
         if key in self._text_cache:
             return self._text_cache[key]
@@ -155,7 +192,7 @@ class Renderer:
 
     def draw_rockets(self, surface: pygame.Surface, game: Game, now: float = 0.0) -> None:
         for r in game.rockets:
-            color = PLAYER_COLORS[r.player % 3]
+            color = self.player_color(r.player, now)
             g = self.glove(color, int(r.radius * 3.4))
             wobble = math.sin(now * 40 + r.x) * 2
             rect = g.get_rect(center=(int(r.x + wobble), int(r.y)))
@@ -287,7 +324,8 @@ class Renderer:
         pygame.draw.polygon(surface, color, pts)
         pygame.draw.polygon(surface, WHITE, pts, 3)
 
-    def draw_game_over(self, surface: pygame.Surface, game: Game, hint: str) -> None:
+    def draw_game_over(self, surface: pygame.Surface, game: Game, hint: str, stars: dict | None = None,
+                       totals: dict | None = None, unlocks: dict | None = None, now: float = 0.0) -> None:
         shade = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
         shade.fill((0, 0, 0, 170))
         surface.blit(shade, (0, 0))
@@ -304,8 +342,24 @@ class Renderer:
         for i, p in enumerate(ranked):
             words = "word" if p.broken == 1 else "words"
             line = f"{p.name}:  {p.score} points   {p.broken} {words}   best combo x{p.best_combo}"
+            y = int(self.h * (0.36 + 0.11 * i))
             t = self._text(line, self.hud_font, PLAYER_COLORS[p.index % 3])
-            surface.blit(t, t.get_rect(center=(self.w // 2, int(self.h * (0.4 + 0.09 * i)))))
+            if stars is not None and p.index in stars:
+                rect = t.get_rect(midright=(self.w // 2 + 260, y))
+                surface.blit(t, rect)
+                got = stars[p.index]
+                for s in range(3):
+                    pop = 1.0 + 0.25 * math.sin(now * 6 + s) if s < got else 1.0
+                    self._star(surface, rect.right + 40 + s * 52, y, int(20 * pop), 0.0,
+                               GOLD if s < got else (70, 70, 85))
+                extra = f"+{got} = {totals.get(p.index, 0)} stars" if totals else ""
+                if unlocks and unlocks.get(p.index):
+                    extra += "   New: " + ", ".join(unlocks[p.index]) + "!"
+                if extra:
+                    e = self._text(extra, self.small_font, GOLD)
+                    surface.blit(e, e.get_rect(midleft=(rect.left, y + 34)))
+            else:
+                surface.blit(t, t.get_rect(center=(self.w // 2, y)))
         h = self._text(hint, self.hud_font, WHITE)
         surface.blit(h, h.get_rect(center=(self.w // 2, int(self.h * 0.85))))
 
