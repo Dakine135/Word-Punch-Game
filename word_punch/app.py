@@ -11,6 +11,7 @@ from . import config
 from .game.core import MODES, Game
 from .ui.camera_view import CameraView
 from .ui.effects import Effects
+from .ui.mic_meter import draw_mic_meter
 from .ui.render import GOLD, PLAYER_COLORS, Renderer
 from .ui.sfx import Sfx
 from .words import WordBank
@@ -252,6 +253,10 @@ class App:
             surf.blit(t, (14, self.size[1] - t.get_height() - 30))
         if self.debug:
             self._draw_debug(surf)
+        elif self.speech and self.speech.error:
+            t = r.small_font.render(self.speech.error + "  (try --mic, or pick one in tools/speech_spike.py)",
+                                    True, (255, 120, 120))
+            surf.blit(t, (14, self.size[1] - t.get_height() - 70))
         if self.paused:
             t = r.big_font.render("Paused", True, GOLD)
             surf.blit(t, t.get_rect(center=(self.size[0] // 2, self.size[1] // 2)))
@@ -273,7 +278,11 @@ class App:
             lines.append(f"pose {pf} fps, {self.vision.pose_ms:.0f} ms" +
                          (f"  ERROR {self.vision.error}" if self.vision.error else ""))
         if self.speech:
-            lines.append("mic " + ("ready" if self.speech.ready else "starting..."))
+            sp = self.speech
+            state = sp.error or ("ready" if sp.ready else "starting...")
+            lines.append(f"mic: {sp.device_name or cfg_device(self.cfg)} ({state})")
+            draw_mic_meter(surf, pygame.Rect(self.size[0] - 320, self.size[1] - 70, 300, 22),
+                           sp.level, sp.peak, self.renderer.small_font, "mic level")
         lines.append("heard: " + " ".join(self.heard_log))
         for lane in self.game.lanes:
             d = lane.difficulty
@@ -321,6 +330,10 @@ class App:
                 self.speech.stop()
             pygame.quit()
         return 0
+
+
+def cfg_device(cfg: dict) -> str:
+    return cfg["speech"]["device"] or "system default"
 
 
 def main(argv=None) -> int:

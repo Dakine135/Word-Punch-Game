@@ -5,7 +5,8 @@ to logs/speech_test_<time>.csv.
 
     python tools/speech_spike.py --levels k2 k3
     python tools/speech_spike.py --levels letters
-Keys: Space = skip (counts as a miss), Esc = quit.
+Keys: Space = skip (counts as a miss), Tab / Shift+Tab = change mic (saved to settings.toml),
+Esc = quit. The bar at the bottom shows the mic level - it should jump when someone talks.
 """
 from __future__ import annotations
 
@@ -22,7 +23,9 @@ import pygame
 
 from word_punch import config
 from word_punch.speech.matcher import match_strength
-from word_punch.speech.service import Heard, SpeechService, Voice
+from word_punch.speech.service import Heard, SpeechService, Voice, list_input_devices
+from word_punch.ui.mic_meter import draw_mic_meter
+from word_punch.ui.render import font as game_font
 from word_punch.words import WordBank
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -39,14 +42,28 @@ def main() -> int:
     if args.device:
         cfg["speech"]["device"] = args.device
     words = [(w, bank.level(k).is_letters) for k in args.levels for w in bank.level(k).words]
-    speech = SpeechService(cfg["speech"])
-    speech.start(bank.vocab(args.levels))
+    vocab = bank.vocab(args.levels)
+
+    # Mic choices: "" = system default, then each input device by name.
+    mics = [("", "System default")] + [(name, name) for _, name in list_input_devices()]
+    current = cfg["speech"]["device"]
+    mic_idx = next((i for i, (n, _) in enumerate(mics) if n and current and current.lower() in n.lower()), 0)
+
+    def start_speech():
+        svc = SpeechService(dict(cfg["speech"], device=mics[mic_idx][0]))
+        svc.start(vocab)
+        return svc
+
+    speech = start_speech()
+    saved_msg = ""
+    switch_at = 0.0  # apply a mic change shortly after the last Tab press
 
     pygame.init()
-    screen = pygame.display.set_mode((1100, 650))
+    screen = pygame.display.set_mode((1100, 700))
     pygame.display.set_caption("Word Punch - speech test")
-    huge = pygame.font.SysFont("comicsansms", 200, bold=True)
-    font = pygame.font.SysFont("arial", 26)
+    huge = game_font(200)
+    font = pygame.font.SysFont("arial", 24)
+    small = pygame.font.SysFont("arial", 20)
     clock = pygame.time.Clock()
 
     log_dir = ROOT / "logs"
@@ -90,6 +107,18 @@ def main() -> int:
                     running = False
                 elif e.type == pygame.KEYDOWN and e.key == pygame.K_SPACE:
                     next_word("skip")
+                elif e.type == pygame.KEYDOWN and e.key == pygame.K_TAB:
+                    step = -1 if e.mod & pygame.KMOD_SHIFT else 1
+                    mic_idx = (mic_idx + step) % len(mics)
+                    switch_at = time.time() + 0.6
+                    saved_msg = ""
+
+            if switch_at and time.time() >= switch_at:
+                switch_at = 0.0
+                speech.stop(wait=False)
+                speech = start_speech()
+                path = config.save_user("speech", "device", mics[mic_idx][0])
+                saved_msg = f"saved to {path.name} - the game will use this mic"
 
             target, is_letter = words[idx % len(words)]
             for ev in speech.poll():
@@ -108,16 +137,38 @@ def main() -> int:
             if now >= flash_until:
                 t, _ = words[idx % len(words)]
                 surf = huge.render(t, True, (255, 255, 255))
-                screen.blit(surf, surf.get_rect(center=(550, 270)))
-            status = "listening" if speech.ready else "starting mic..."
+                screen.blit(surf, surf.get_rect(center=(550, 210)))
+
+            # Mic meter + status
+            if switch_at:
+                status = "switching..."
+            elif speech.error:
+                status = speech.error
+            elif speech.ready:
+                status = "listening"
+            else:
+                status = "starting mic..."
+            draw_mic_meter(screen, pygame.Rect(20, 430, 500, 30), speech.level, speech.peak, font,
+                           f"Mic level  ({status})")
             avg = sum(times) / len(times) if times else 0
             lines = [
-                f"{status}   heard: {' '.join(heard[-8:])}   (~ = partial, ? = unknown sound)",
+                f"heard: {' '.join(heard[-8:])}",
+                "(~ = partial guess, ? = a sound that wasn't one of the words)",
                 f"hits {hits}   skips {misses}   avg time {avg:.1f}s   levels: {' '.join(args.levels)}",
-                "Space = skip   Esc = quit",
+                "Space = skip   Tab / Shift+Tab = change mic   Esc = quit",
             ]
             for i, line in enumerate(lines):
-                screen.blit(font.render(line, True, (220, 220, 220)), (20, 520 + i * 36))
+                screen.blit(font.render(line, True, (220, 220, 220)), (20, 480 + i * 34))
+
+            # Mic list on the right
+            x, y = 560, 395
+            screen.blit(font.render("Microphone (Tab to change):", True, (255, 220, 120)), (x, y))
+            for i, (_, label) in enumerate(mics):
+                selected = i == mic_idx
+                color = (120, 255, 140) if selected else (170, 170, 190)
+                screen.blit(small.render(("> " if selected else "   ") + label, True, color), (x, y + 32 + i * 24))
+            if saved_msg:
+                screen.blit(small.render(saved_msg, True, (150, 150, 170)), (x, y + 36 + len(mics) * 24))
             pygame.display.flip()
             clock.tick(60)
     finally:

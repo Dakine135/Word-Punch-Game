@@ -4,10 +4,12 @@ The game talks to it through SpeechService:
     svc = SpeechService(cfg["speech"]); svc.start(vocab)
     for event in svc.poll(): ...      # Heard(word) or Voice()
     svc.mute(1.2)                      # ignore the mic while the game itself is talking
+    svc.level, svc.device_name, svc.error   # mic meter (0..1) and status, updated by poll()
 """
 from __future__ import annotations
 
 import json
+import math
 import multiprocessing as mp
 import queue
 import time
@@ -27,14 +29,37 @@ class Voice:
     t: float
 
 
+def list_input_devices() -> list[tuple[int, str]]:
+    """Input devices on the default host API (MME on Windows), so each mic is listed once."""
+    import sounddevice as sd
+    api = sd.default.hostapi
+    return [(i, d["name"].strip()) for i, d in enumerate(sd.query_devices())
+            if d["max_input_channels"] > 0 and d["hostapi"] == api]
+
+
 def find_input_device(name_part: str):
+    """Device index whose name contains name_part (default host API first), or None = default."""
     import sounddevice as sd
     if not name_part:
         return None
+    for i, name in list_input_devices():
+        if name_part.lower() in name.lower():
+            return i
     for i, d in enumerate(sd.query_devices()):
         if d["max_input_channels"] > 0 and name_part.lower() in d["name"].lower():
             return i
     raise ValueError(f"no input device matching {name_part!r}")
+
+
+def level_of(pcm: bytes) -> float:
+    """Loudness of an int16 block as 0..1 (-60 dBFS .. 0 dBFS)."""
+    import numpy as np
+    x = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+    if x.size == 0:
+        return 0.0
+    rms = float(np.sqrt(np.mean(x * x)))
+    db = 20 * math.log10(max(rms, 1e-6))
+    return min(1.0, max(0.0, (db + 60) / 60))
 
 
 def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, stop) -> None:
@@ -74,9 +99,16 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
             else:
                 sent.append(w)
 
-    device = find_input_device(cfg["device"])
-    with sd.RawInputStream(samplerate=rate, blocksize=rate // 10, dtype="int16",
-                           channels=1, device=device, callback=on_audio):
+    try:
+        device = find_input_device(cfg["device"])
+        stream = sd.RawInputStream(samplerate=rate, blocksize=rate // 20, dtype="int16",
+                                   channels=1, device=device, callback=on_audio)
+        info = sd.query_devices(device if device is not None else sd.default.device[0])
+    except Exception as e:  # bad device name, mic unplugged, unsupported rate...
+        out_q.put(("error", f"mic: {e}"))
+        return
+    out_q.put(("device", info["name"].strip()))
+    with stream:
         out_q.put(("ready", None))
         while not stop.is_set():
             # Commands from the game.
@@ -95,6 +127,7 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                 data = audio_q.get(timeout=0.1)
             except queue.Empty:
                 continue
+            out_q.put(("level", level_of(data)))
             now = time.time()
             if now < muted_until:
                 rec.Reset()
@@ -121,6 +154,10 @@ class SpeechService:
         self._ctx = ctx
         self._proc = None
         self.ready = False
+        self.level = 0.0    # latest mic loudness 0..1
+        self.peak = 0.0     # slowly falling peak, for the meter
+        self.device_name = ""
+        self.error: str | None = None
 
     def start(self, vocab) -> None:
         self._proc = self._ctx.Process(
@@ -141,17 +178,35 @@ class SpeechService:
                 kind, arg = self._out_q.get_nowait()
             except queue.Empty:
                 break
-            if kind == "ready":
+            if kind == "level":
+                self.level = arg
+                self.peak = max(arg, self.peak - 0.02)
+            elif kind == "ready":
                 self.ready = True
+            elif kind == "device":
+                self.device_name = arg
+            elif kind == "error":
+                self.error = arg
             elif kind == "heard":
                 events.append(Heard(*arg))
             elif kind == "voice":
                 events.append(Voice(arg))
         return events
 
-    def stop(self) -> None:
+    def stop(self, wait: bool = True) -> None:
+        """Stop the recognizer. wait=False returns immediately (used when switching mics)."""
         self._stop.set()
-        if self._proc:
-            self._proc.join(timeout=2)
-            if self._proc.is_alive():
-                self._proc.terminate()
+        proc = self._proc
+        if not proc:
+            return
+
+        def finish():
+            proc.join(timeout=2)
+            if proc.is_alive():
+                proc.terminate()
+
+        if wait:
+            finish()
+        else:
+            import threading
+            threading.Thread(target=finish, daemon=True).start()
