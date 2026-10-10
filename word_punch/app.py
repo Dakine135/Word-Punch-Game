@@ -228,7 +228,12 @@ class App:
         for i, prof in enumerate(self.player_profiles):
             if prof is None or i >= len(self.game.players):
                 continue
-            update_from_game(prof, self.game.track_for(i), self.game.players[i], finished)
+            info = {"mode": self.game.mode, "style": self.cfg["rules"].get("style", "punch"),
+                    "game": getattr(self.game, "kind", "classic"),
+                    "minutes": round((time.time() - self.game_started) / 60, 1),
+                    "result": self.game.result or "quit",
+                    "stars": self.stars_for(i) if hasattr(self, "stars_for") else 0}
+            update_from_game(prof, self.game.track_for(i), self.game.players[i], finished, self.game, info)
             self.store.save(prof)
         if finished:
             self.saved_final = True

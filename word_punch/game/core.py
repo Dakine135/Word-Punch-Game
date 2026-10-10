@@ -124,6 +124,8 @@ class Game:
         self.result: str | None = None   # "complete" | "out" once over
         self.winner: int | None = None   # competitive
         self.started_at = now
+        # player index -> word -> {"seen", "read", "missed", "time"} (for profiles / parent report)
+        self.word_stats: dict[int, dict[str, dict]] = {}
         self.round_end = self.rules.get("round_end", "lives")
         self.round_words = int(self.rules.get("round_words", 15))
         self.round_seconds = float(self.rules.get("round_minutes", 3)) * 60
@@ -176,6 +178,13 @@ class Game:
         if self.round_end != "time":
             return None
         return max(0.0, self.round_seconds - (now - self.started_at))
+
+    def _stat(self, player: int | None, text: str, key: str, amount: float = 1) -> None:
+        if player is None:
+            return
+        s = self.word_stats.setdefault(player, {}).setdefault(
+            text, {"seen": 0, "read": 0, "missed": 0, "time": 0.0})
+        s[key] += amount
 
     def lane_at(self, x: float) -> Lane:
         for lane in self.lanes:
@@ -328,6 +337,7 @@ class Game:
                                pick.points, track, lane, x, -bh / 2, bw, bh, now)
             self.words.append(word)
             self.events.append(Event("spawn", word, lane=lane))
+            self._stat(track.owner, pick.text, "seen")
             return word
         return None
 
@@ -355,6 +365,9 @@ class Game:
         lane = w.lane
         lane.broken += 1
         lane.difficulty.on_hit(w.read_time)
+        reader = w.track.owner if w.track.owner is not None else player
+        self._stat(reader, w.text, "read")
+        self._stat(reader, w.text, "time", w.read_time)
         self.events.append(Event("break", w, player=player, points=pts, x=w.x, y=w.y,
                                  style=style, angle=angle))
         if w.track.record_hit(w.text, w.level_key, w.read_time):
@@ -396,6 +409,7 @@ class Game:
     def _word_hit_floor(self, w: FallingWord, now: float) -> None:
         lane = w.lane
         w.track.record_miss(w.text)
+        self._stat(w.track.owner, w.text, "missed")
         lane.difficulty.on_miss()
         for i in lane.players:
             self.players[i].combo = 0

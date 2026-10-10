@@ -382,6 +382,10 @@ class SetupScreen:
                 self.msg = "Add at least one player first (press N)"
             elif e.key == pygame.K_n:
                 self.typing, self.typing_for, self.msg = "", "new", ""
+            elif e.key == pygame.K_g:
+                from ..report import write_report
+                path = write_report()
+                self.msg = f"Parent report opened in your browser ({path.name})"
             elif e.key == pygame.K_r and cur:
                 self.typing, self.typing_for, self.msg = cur.name, "rename", ""
             elif e.key == pygame.K_UP and self.profiles:
@@ -433,7 +437,7 @@ class SetupScreen:
             surface.blit(t, (panel.left + 330, y + 8))
             y += 42
         help_lines = ["N  new player      R  rename      Up/Down  pick      Left/Right  change level",
-                      "Delete  remove player      Enter  done (back to the start screen)"]
+                      "G  parent report (opens in your browser)      Delete  remove      Enter  done"]
         for j, line in enumerate(help_lines):
             t = r.small_font.render(line, True, DIM)
             surface.blit(t, t.get_rect(center=(w // 2, panel.bottom + 30 + j * 30)))
