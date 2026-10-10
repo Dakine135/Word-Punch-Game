@@ -99,6 +99,10 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
     pending_since = 0.0
     in_utterance = False
     loudest = 0.0               # loudest block in the current utterance
+    current_vocab = list(vocab)
+    from collections import deque
+    pre_roll: deque = deque(maxlen=8)   # ~0.4 s before speech starts
+    utter: list[bytes] = []             # audio of the current utterance (when saving misses)
     audio_q: queue.Queue = queue.Queue()
     muted_until = 0.0
     sent: list[str] = []  # words of the current utterance already sent, by position
@@ -153,6 +157,7 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
             out_q.put(("level", level))
             now = time.time()
             if pending_vocab is not None and (not in_utterance or now - pending_since > 2.0):
+                current_vocab = list(pending_vocab)
                 rec = make_recognizer(pending_vocab)
                 pending_vocab, in_utterance, loudest = None, False, 0.0
                 sent.clear()
@@ -175,6 +180,13 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                         out_q.put(("transcript", (partial, False, [])))
 
             loudest = max(loudest, level)
+            if cfg.get("save_misses"):
+                if in_utterance or level >= cfg.get("voice_level", 0.45):
+                    if not utter:
+                        utter.extend(pre_roll)
+                    utter.append(data)
+                else:
+                    pre_roll.append(data)
             if rec.AcceptWaveform(data):
                 result = json.loads(rec.Result())
                 words = [w["word"] if w.get("conf", 1.0) >= cfg["min_confidence"] else "[unk]"
@@ -183,6 +195,9 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                 if not words and not sent and loudest >= cfg.get("voice_level", 0.45):
                     # A clear sound the recognizer couldn't place (e.g. a very short "a").
                     out_q.put(("voice", now))
+                    if cfg.get("save_misses") and utter:
+                        _save_miss(b"".join(utter), rate, current_vocab)
+                utter = []
                 sent.clear()
                 in_utterance, loudest = False, 0.0
             else:
@@ -190,6 +205,21 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                 in_utterance = in_utterance or bool(partial) or level >= cfg.get("voice_level", 0.45)
                 if cfg["use_partials"]:
                     send(partial, now, False)
+
+
+def _save_miss(audio: bytes, rate: int, vocab: list[str]) -> None:
+    """logs/audio/<time>.wav + .json (what it was listening for) - for tuning to kids' voices."""
+    import wave
+    from pathlib import Path
+    d = Path(__file__).resolve().parent.parent.parent / "logs" / "audio"
+    d.mkdir(parents=True, exist_ok=True)
+    stem = d / time.strftime("%Y%m%d_%H%M%S")
+    with wave.open(str(stem) + ".wav", "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(audio)
+    (Path(str(stem) + ".json")).write_text(json.dumps({"listening_for": vocab}), encoding="utf-8")
 
 
 class SpeechService:

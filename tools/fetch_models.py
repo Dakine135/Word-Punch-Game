@@ -17,8 +17,9 @@ POSE = {
 }
 VOICE = "en_US-lessac-medium"  # Piper voice for reading words aloud
 VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/"
-VOSK_NAME = "vosk-model-small-en-us-0.15"
-VOSK_URL = f"https://alphacephei.com/vosk/models/{VOSK_NAME}.zip"
+VOSK_MODELS = ["vosk-model-small-en-us-0.15",    # fast (Raspberry Pi)
+               "vosk-model-en-us-0.22-lgraph"]   # accurate, much better with kids' voices (default)
+VOSK_URL = "https://alphacephei.com/vosk/models/{}.zip"
 
 
 def download(url: str, dest: Path) -> None:
@@ -42,13 +43,13 @@ def main() -> int:
         dest = MODELS / name
         if not dest.exists():
             download(url, dest)
-    vosk_dir = MODELS / VOSK_NAME
-    if not vosk_dir.exists():
-        zip_path = MODELS / f"{VOSK_NAME}.zip"
-        download(VOSK_URL, zip_path)
-        with zipfile.ZipFile(zip_path) as z:
-            z.extractall(MODELS)
-        zip_path.unlink()
+    for name in VOSK_MODELS:
+        if not (MODELS / name).exists():
+            zip_path = MODELS / f"{name}.zip"
+            download(VOSK_URL.format(name), zip_path)
+            with zipfile.ZipFile(zip_path) as z:
+                z.extractall(MODELS)
+            zip_path.unlink()
     for ext in (".onnx", ".onnx.json"):
         dest = MODELS / f"{VOICE}{ext}"
         if not dest.exists():

@@ -51,6 +51,10 @@ def steps(lo: float, hi: float, step: float, fmt: str = "{:.1f}") -> list:
 ON_OFF = [(True, "on"), (False, "off")]
 
 
+def _models():
+    return config.ROOT / "models"
+
+
 class SettingsScreen:
     def __init__(self, app):
         self.app = app
@@ -92,6 +96,12 @@ class SettingsScreen:
                  "auto can drop to ~15 fps in a dim room"),
             header("MICROPHONE"),
             Item("Microphone", "speech", "device", mics, "mic"),
+            Item("Speech model", "speech", "model",
+                 [(str(_models() / "vosk-model-en-us-0.22-lgraph"), "accurate (best for kids)"),
+                  (str(_models() / "vosk-model-small-en-us-0.15"), "fast (for Raspberry Pi)")], "mic",
+                 note="the accurate model hears kids' voices much better"),
+            Item("Save unheard speech", "speech", "save_misses", ON_OFF, "mic",
+                 note="saves clips it couldn't understand to logs/audio (for tuning) - kids' voices!"),
             Item("Listen for", "speech", "grammar",
                  [("screen", "only the words on screen (best)"), ("level", "every word in their levels")],
                  note="on-screen only is much more accurate for kids"),
