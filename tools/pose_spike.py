@@ -1,7 +1,7 @@
 """Pose test: mirrored camera, skeletons, player slots, and PUNCH! events.
 
 Use it to check tracking with the kids and to tune [punch] in settings.toml.
-    python tools/pose_spike.py            (Esc quits, F toggles fullscreen)
+    python tools/pose_spike.py            (Esc quits, F11 or F toggles fullscreen)
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pygame
 
 from word_punch import config
+from word_punch.ui import display
 from word_punch.ui.camera_view import CameraView
 from word_punch.vision.punch import PunchDetector
 from word_punch.vision.service import VisionService
@@ -37,8 +38,7 @@ def main() -> int:
 
     pygame.init()
     size = (cfg["game"]["width"], cfg["game"]["height"])
-    screen = pygame.display.set_mode(size)
-    pygame.display.set_caption("Word Punch - pose test")
+    screen = display.open_window(size, False, "Word Punch - pose test")
     font = pygame.font.SysFont("arial", 22, bold=True)
     big = pygame.font.SysFont("arial", 64, bold=True)
     view = CameraView(size, (vision.width, vision.height))
@@ -57,8 +57,8 @@ def main() -> int:
             for e in pygame.event.get():
                 if e.type == pygame.QUIT or (e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE):
                     running = False
-                elif e.type == pygame.KEYDOWN and e.key == pygame.K_f:
-                    pygame.display.toggle_fullscreen()
+                elif display.is_toggle_key(e) or (e.type == pygame.KEYDOWN and e.key == pygame.K_f):
+                    display.toggle_fullscreen()
 
             if args.seconds and time.time() - started > args.seconds:
                 running = False

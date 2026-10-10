@@ -10,6 +10,7 @@ import pygame
 
 from . import config
 from .game.core import MODES, Game
+from .ui import display
 from .ui.camera_view import CameraView
 from .ui.effects import Effects
 from .ui.mic_meter import draw_mic_meter
@@ -22,7 +23,7 @@ Examples:
   python -m word_punch --player Sam:k3 --player Max:letters
   python -m word_punch --mode coop --gentle --player Sam:k2 --player Max:letters
   python -m word_punch --sim          (no camera/mic: type a word + Enter to say it, click to punch)
-Keys: Esc quit, F11 fullscreen, F3 debug info, F2 pause, Enter = play again after game over.
+Keys: Esc quit, F11 (or Alt+Enter) fullscreen, F3 debug info, F2 pause, Enter = play again.
 """
 
 
@@ -39,7 +40,8 @@ def parse_args(bank: WordBank, argv=None):
     ap.add_argument("--no-camera", action="store_true", help="mouse clicks punch")
     ap.add_argument("--no-mic", action="store_true", help="type words + Enter to say them")
     ap.add_argument("--mic", help="mic name substring (overrides settings)")
-    ap.add_argument("--fullscreen", action="store_true")
+    ap.add_argument("--fullscreen", action="store_true", help="start fullscreen")
+    ap.add_argument("--windowed", action="store_true", help="start in a window (overrides settings)")
     ap.add_argument("--debug", action="store_true", help="show fps / heard words")
     ap.add_argument("--quit-after", type=float, metavar="SECONDS",
                     help="exit after this long and print performance stats (benchmarking)")
@@ -70,10 +72,9 @@ class App:
             cfg["speech"]["device"] = args.mic
 
         pygame.init()
-        flags = pygame.FULLSCREEN if (args.fullscreen or cfg["game"]["fullscreen"]) else 0
+        fullscreen = (args.fullscreen or cfg["game"]["fullscreen"]) and not args.windowed
         self.size = (cfg["game"]["width"], cfg["game"]["height"])
-        self.screen = pygame.display.set_mode(self.size, flags)
-        pygame.display.set_caption("Word Punch")
+        self.screen = display.open_window(self.size, fullscreen, "Word Punch")
         self.renderer = Renderer(self.size)
         self.effects = Effects()
         self.sfx = Sfx()
@@ -96,6 +97,7 @@ class App:
             self.punchers = [PunchDetector(cfg["punch"]) for _ in range(3)]
             self.pose_times: deque = deque(maxlen=60)
         self.new_game()
+        self._update_cursor()
         if not args.no_mic:
             from .speech.service import SpeechService
             self.speech = SpeechService(cfg["speech"])
@@ -128,8 +130,9 @@ class App:
                     continue
                 if e.key == pygame.K_ESCAPE:
                     return False
-                if e.key == pygame.K_F11:
-                    pygame.display.toggle_fullscreen()
+                if display.is_toggle_key(e):
+                    display.toggle_fullscreen()
+                    self._update_cursor()
                 elif e.key == pygame.K_F3:
                     self.debug = not self.debug
                 elif e.key == pygame.K_F2:
@@ -148,6 +151,10 @@ class App:
                 player = {1: 0, 3: 1, 2: 2}[e.button]
                 self.game.punch(player, e.pos[0], now, e.pos[1])
         return True
+
+    def _update_cursor(self):
+        # Hide the mouse pointer in fullscreen when the camera does the punching.
+        pygame.mouse.set_visible(not (self.vision and display.is_fullscreen()))
 
     # ---- hooks for tools that extend the game (e.g. tools/punch_playground.py) -------
 

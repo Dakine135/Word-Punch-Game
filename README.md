@@ -40,7 +40,7 @@ python -m word_punch --sim     # no camera/mic: type a word + Enter to "say" it,
 | Key | Action |
 |---|---|
 | Esc | Quit |
-| F11 | Fullscreen |
+| F11 or Alt+Enter | Fullscreen on/off. Scales to any screen; set `[game] fullscreen = true` in settings.toml to always start fullscreen |
 | F3 | Debug info (fps, heard words) |
 | F2 | Pause |
 | Enter | Play again |
