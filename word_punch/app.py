@@ -10,20 +10,25 @@ import pygame
 
 from . import config
 from .game.core import MODES, Game
+from .profiles import Profile, ProfileStore, apply_to_track, update_from_game
 from .ui import display
 from .ui.camera_view import CameraView
 from .ui.effects import Effects
+from .ui.menu import Button, Menu, Pointers, draw_button, update_buttons
 from .ui.mic_meter import draw_mic_meter
 from .ui.render import GOLD, PLAYER_COLORS, Renderer
 from .ui.sfx import Sfx
 from .words import WordBank
 
-HELP = """Players are NAME:LEVEL. Levels: letters k1 k2 k3 k4 g1q1 g1q2 g1q3 g1q4
+HELP = """With no --player, a start screen lets the kids pick their names (saved profiles).
+Players are NAME:LEVEL. Levels: letters k1 k2 k3 k4 g1q1 g1q2 g1q3 g1q4
 Examples:
+  python -m word_punch                                   (start screen)
   python -m word_punch --player Sam:k3 --player Max:letters
   python -m word_punch --mode coop --gentle --player Sam:k2 --player Max:letters
   python -m word_punch --sim          (no camera/mic: type a word + Enter to say it, click to punch)
-Keys: Esc quit, F11 (or Alt+Enter) fullscreen, F3 debug info, F2 pause, Enter = play again.
+Keys: Esc = back to the start screen (quits from there), F11 / Alt+Enter fullscreen,
+      F3 debug info, F2 pause, Enter = play again, M = menu after a game.
 """
 
 
@@ -46,6 +51,7 @@ def parse_args(bank: WordBank, argv=None):
     ap.add_argument("--quit-after", type=float, metavar="SECONDS",
                     help="exit after this long and print performance stats (benchmarking)")
     args = ap.parse_args(argv)
+    args.use_menu = not args.player
     players = args.player or ["Player 1:k2", "Player 2:letters"]
     args.names, args.levels = [], []
     for spec in players[:3]:
@@ -93,9 +99,17 @@ class App:
             from .vision.tracker import Tracker
             self.vision = VisionService(cfg)
             self.vision.start()
-            self.tracker = Tracker(len(args.names))
+            self.tracker = Tracker(3)
             self.punchers = [PunchDetector(cfg["punch"]) for _ in range(3)]
             self.pose_times: deque = deque(maxlen=60)
+        self.store = ProfileStore()
+        self.player_profiles: list[Profile | None] = [None] * len(args.names)
+        self.frame_punches: list[tuple[int, int]] = []
+        self.frame_clicks: list[tuple[int, int]] = []
+        self.frame_keys: list = []
+        self.over_buttons: list[Button] = []
+        self.menu = Menu(self.renderer, self.size, self.store, bank, gentle=cfg["rules"]["gentle"])
+        self.state = "menu" if args.use_menu else "playing"
         self.new_game()
         self._update_cursor()
         if not args.no_mic:
@@ -108,10 +122,44 @@ class App:
         self.game = Game(mode=self.args.mode, player_names=self.args.names,
                          player_levels=self.args.levels, bank=self.bank, cfg=self.cfg,
                          size=self.size, measure=self.renderer.measure, now=time.time())
+        for i, prof in enumerate(self.player_profiles):
+            track = self.game.track_for(i)
+            if prof and track:
+                apply_to_track(prof, track)
         self.game_started = time.time()
         self.over_at = None
+        self.saved_final = False
+        self.over_buttons = []
         if self.speech:
             self._sync_vocab()
+
+    def start_from_menu(self, req: dict) -> None:
+        profiles = req["profiles"]
+        self.args.mode = req["mode"]
+        self.args.names = [p.name for p in profiles]
+        self.args.levels = [p.level for p in profiles]
+        self.cfg["rules"]["gentle"] = req["gentle"]
+        self.player_profiles = list(profiles)
+        self.effects = Effects()
+        self.new_game()
+        self.state = "playing"
+
+    def to_menu(self) -> None:
+        self.save_progress(finished=True)
+        self.menu.reset()
+        self.state = "menu"
+
+    def save_progress(self, finished: bool) -> None:
+        """Write each kid's progress to their profile (once per game when finished)."""
+        if finished and self.saved_final:
+            return
+        for i, prof in enumerate(self.player_profiles):
+            if prof is None or i >= len(self.game.players):
+                continue
+            update_from_game(prof, self.game.track_for(i), self.game.players[i], finished)
+            self.store.save(prof)
+        if finished:
+            self.saved_final = True
 
     def _sync_vocab(self):
         vocab = self.game.vocab()
@@ -122,17 +170,38 @@ class App:
     # ---- input ---------------------------------------------------------------------
 
     def handle_events(self, now: float) -> bool:
+        self.frame_clicks, self.frame_keys = [], []
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
                 return False
+            if e.type == pygame.KEYDOWN and display.is_toggle_key(e):
+                display.toggle_fullscreen()
+                self._update_cursor()
+                continue
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_F3:
+                self.debug = not self.debug
+                continue
+            if self.state == "menu":
+                if e.type == pygame.KEYDOWN:
+                    if e.key == pygame.K_ESCAPE and self.menu.screen != "setup":
+                        if self.menu.screen == "who":
+                            return False
+                        self.menu.screen = "who"
+                    else:
+                        self.frame_keys.append(e)
+                elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                    self.frame_clicks.append(e.pos)
+                continue
             if e.type == pygame.KEYDOWN:
                 if self.on_key(e, now):
                     continue
                 if e.key == pygame.K_ESCAPE:
+                    if self.args.use_menu:
+                        self.to_menu()
+                        continue
                     return False
-                if display.is_toggle_key(e):
-                    display.toggle_fullscreen()
-                    self._update_cursor()
+                if e.key == pygame.K_m and self.game.over and self.args.use_menu:
+                    self.to_menu()
                 elif e.key == pygame.K_F3:
                     self.debug = not self.debug
                 elif e.key == pygame.K_F2:
@@ -148,6 +217,9 @@ class App:
                 elif e.unicode and (e.unicode.isalpha() or e.unicode == "'"):
                     self.typed += e.unicode
             if e.type == pygame.MOUSEBUTTONDOWN and e.button in (1, 3, 2):
+                if self.game.over:
+                    self.frame_clicks.append(e.pos)
+                    continue
                 player = {1: 0, 3: 1, 2: 2}[e.button]
                 self.game.punch(player, e.pos[0], now, e.pos[1])
         return True
@@ -187,12 +259,17 @@ class App:
         if not self.vision:
             return
         self.hands = []
+        self.frame_punches = []
+        playing = self.state == "playing" and not self.game.over
         for t, people in self.vision.poll():
             self.pose_times.append(t)
             slots = self.tracker.update(people, t)
             for s in slots:
                 for p in self.punchers[s.index].update(s.person, t):
                     x, y = self.view.to_screen(p.x, p.y)
+                    self.frame_punches.append((x, y))
+                    if not playing:
+                        continue
                     player = self.game.lane_at(x).players[0] if self.game.mode == "split" else s.index
                     color = PLAYER_COLORS[player % 3]
                     self.effects.ring(x, y, color, r0=20, r1=110, life=0.3, width=10)
@@ -206,13 +283,9 @@ class App:
                 if kp:
                     x, y = self.view.to_screen(kp.x, kp.y)
                     player = s.index
-                    if self.game.mode == "split":
+                    if self.state == "playing" and self.game.mode == "split":
                         player = self.game.lane_at(x).players[0]
                     self.hands.append((player, x, y))
-        if self.game.over and self.over_at and now - self.over_at > 3 and any(
-                self.punchers[i].hands[0].last_punch > self.over_at or
-                self.punchers[i].hands[1].last_punch > self.over_at for i in range(3)):
-            self.new_game()
 
     # ---- events -> effects -----------------------------------------------------------
 
@@ -258,6 +331,7 @@ class App:
                 fx.float_text(ev.text, ev.word.x, ev.word.y + 60, (255, 255, 255), r.pop_font, life=1.5)
             elif k == "levelup":
                 self.sfx.play("levelup")
+                self.save_progress(finished=False)
                 lane = ev.lane
                 cx = (lane.x0 + lane.x1) / 2
                 fx.float_text("LEVEL UP!", cx, self.size[1] * 0.4, GOLD, r.big_font, life=2.0, rise=20, pop=True)
@@ -266,6 +340,7 @@ class App:
             elif k == "gameover":
                 self.sfx.play("gameover")
                 self.over_at = now
+                self.save_progress(finished=True)
         if self.speech:
             self._sync_vocab()
 
@@ -279,6 +354,14 @@ class App:
         else:
             self.view.draw(surf, frame)
         r = self.renderer
+        if self.state == "menu":
+            self.menu.draw(surf, now)
+            r.draw_hands(surf, self.hands, now)
+            self.effects.draw(surf)
+            if self.debug:
+                self._draw_debug(surf)
+            pygame.display.flip()
+            return
         r.draw_background(surf, self.game)
         r.draw_words(surf, self.game, now)
         self.effects.draw(surf)
@@ -303,14 +386,45 @@ class App:
             t = r.big_font.render("Paused", True, GOLD)
             surf.blit(t, t.get_rect(center=(self.size[0] // 2, self.size[1] // 2)))
         if self.game.over:
-            hint = "Press Enter to play again" + ("  (or punch!)" if self.vision else "")
-            r.draw_game_over(surf, self.game, hint)
+            r.draw_game_over(surf, self.game, "")
+            for b in self.over_buttons:
+                draw_button(surf, r, b, now)
+            r.draw_say_hint(surf, "Hold your hand on a button   (Enter = play again" +
+                            (", M = menu)" if self.args.use_menu else ")"))
+            r.draw_hands(surf, self.hands, now)
 
         if self.effects.shake > 0:
             import random
             dx, dy = random.randint(-4, 4), random.randint(-4, 4)
             surf.scroll(dx, dy)
         pygame.display.flip()
+
+    def _pointers(self) -> Pointers:
+        mouse = pygame.mouse.get_pos() if pygame.mouse.get_visible() and pygame.mouse.get_focused() else None
+        return Pointers(hands=[(x, y) for _, x, y in self.hands], mouse=mouse,
+                        clicks=self.frame_clicks, punches=self.frame_punches)
+
+    def step_menu(self, dt: float, now: float) -> None:
+        req = self.menu.step(dt, now, self._pointers(), self.frame_keys)
+        if req:
+            self.start_from_menu(req)
+
+    def step_game_over(self, dt: float, now: float) -> None:
+        if not self.over_buttons:
+            w, h = self.size
+            self.over_buttons = [Button("again", pygame.Rect(w // 2 - 380, int(h * 0.7), 360, 100),
+                                        "Play again", "", (60, 160, 90))]
+            if self.args.use_menu:
+                self.over_buttons.append(Button("menu", pygame.Rect(w // 2 + 20, int(h * 0.7), 360, 100),
+                                                "Menu", "", (90, 100, 160)))
+        if now - (self.over_at or now) < 1.5:
+            return  # let the results sink in before buttons react
+        fired = update_buttons(self.over_buttons, self._pointers(), dt)
+        if fired and fired.key == "again":
+            self.save_progress(finished=True)
+            self.new_game()
+        elif fired and fired.key == "menu":
+            self.to_menu()
 
     def _draw_debug(self, surf):
         lines = [f"fps {self.clock.get_fps():.0f}"]
@@ -351,6 +465,14 @@ class App:
                     break
                 self.poll_speech(now)
                 self.poll_vision(now)
+                if self.state == "menu":
+                    self.step_menu(dt, now)
+                    self.effects.update(dt)
+                    self.draw(now)
+                    self.clock.tick(self.cfg["game"]["fps"])
+                    continue
+                if self.game.over:
+                    self.step_game_over(dt, now)
                 if not self.paused:
                     self.game.update(dt, now)
                     for r in self.game.rockets:
@@ -362,6 +484,8 @@ class App:
                 self.draw(now)
                 self.clock.tick(self.cfg["game"]["fps"])
         finally:
+            if self.state == "playing":
+                self.save_progress(finished=True)
             if self.args.quit_after:
                 elapsed = time.time() - start
                 stats = [f"draw {frames / elapsed:.0f} fps"]

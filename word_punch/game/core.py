@@ -151,6 +151,14 @@ class Game:
                 return lane
         return self.lanes[-1] if x >= self.w else self.lanes[0]
 
+    def track_for(self, player: int) -> Track | None:
+        """The player's own level track (None in competitive, where the track is shared)."""
+        for lane in self.lanes:
+            for t in lane.tracks:
+                if t.owner == player:
+                    return t
+        return None
+
     def lane_of_player(self, player: int) -> Lane:
         for lane in self.lanes:
             if player in lane.players:
