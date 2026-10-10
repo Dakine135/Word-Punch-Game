@@ -104,7 +104,7 @@ def main() -> int:
 
             pose_times = [pt for pt in pose_times if now - pt < 1.0]
             hud = font.render(
-                f"pose fps {len(pose_times)}   detect {vision.pose_ms:.0f} ms   draw fps {clock.get_fps():.0f}"
+                f"{vision.camera_name}   pose fps {len(pose_times)}   detect {vision.pose_ms:.0f} ms   draw fps {clock.get_fps():.0f}"
                 + ("" if vision.ready else "   (starting camera...)"), True, (255, 255, 255))
             screen.blit(hud, (10, 10))
             pygame.display.flip()

@@ -2,7 +2,10 @@
 # (same structure; only include what you change).
 
 [camera]
-index = 0            # which webcam
+index = "auto"       # "auto" = USB webcam if plugged in, else built-in; or a number to force one
+name = ""            # prefer a camera whose name contains this, e.g. "C270"
+exposure = "auto"    # or a number: webcams drop to ~15 fps in dim rooms on auto. On Windows,
+                     # -5 = 1/32 s (30 fps, darker), -4 = 1/16 s. More light in the room = faster.
 width = 640
 height = 480
 fps = 30

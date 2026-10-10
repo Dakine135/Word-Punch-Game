@@ -310,6 +310,7 @@ class App:
         if self.vision:
             now = time.time()
             pf = sum(1 for t in self.pose_times if now - t < 1)
+            lines.append(f"camera: {self.vision.camera_name}")
             lines.append(f"pose {pf} fps, {self.vision.pose_ms:.0f} ms" +
                          (f"  ERROR {self.vision.error}" if self.vision.error else ""))
         if self.speech:

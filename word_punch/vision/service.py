@@ -31,13 +31,30 @@ def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop) -> None:
     shm = shared_memory.SharedMemory(name=shm_name)
     shared = np.ndarray((h, w, 3), dtype=np.uint8, buffer=shm.buf)
 
-    api = cv2.CAP_DSHOW if hasattr(cv2, "CAP_DSHOW") and _is_windows() else cv2.CAP_ANY
-    cap = cv2.VideoCapture(cam_cfg["index"], api)
+    from .camera_select import resolve
+
+    if _is_windows():
+        api = cv2.CAP_DSHOW
+    elif hasattr(cv2, "CAP_V4L2"):
+        api = cv2.CAP_V4L2
+    else:
+        api = cv2.CAP_ANY
+    index, cam_name = resolve(cam_cfg, api)
+    out_q.put(("camera", cam_name))
+    cap = cv2.VideoCapture(index, api)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
     cap.set(cv2.CAP_PROP_FPS, cam_cfg["fps"])
+    # Exposure: manual trades brightness for frame rate (auto drops fps in dim light).
+    manual, auto = (0.25, 0.75) if api == getattr(cv2, "CAP_DSHOW", -1) else (1, 3)
+    exposure = cam_cfg.get("exposure", "auto")
+    if exposure == "auto":
+        cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, auto)
+    else:
+        cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, manual)
+        cap.set(cv2.CAP_PROP_EXPOSURE, float(exposure))
     if not cap.isOpened():
-        out_q.put(("error", f"could not open camera {cam_cfg['index']}"))
+        out_q.put(("error", f"could not open camera {index} ({cam_name})"))
         return
 
     latest = {"frame": None, "t": 0.0}
@@ -106,6 +123,7 @@ class VisionService:
         self.ready = False
         self.error: str | None = None
         self.pose_ms = 0.0  # last detection time, for the debug HUD
+        self.camera_name = ""
         self._last_seq = -1
 
     def start(self) -> None:
@@ -136,6 +154,8 @@ class VisionService:
                 self.ready = True
             elif kind == "error":
                 self.error = arg
+            elif kind == "camera":
+                self.camera_name = arg
             elif kind == "pose":
                 t, people, dt = arg
                 self.pose_ms = dt * 1000
