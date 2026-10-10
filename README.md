@@ -72,3 +72,32 @@ Copy any section of `word_punch/default_settings.toml` into a `settings.toml` at
 | `[rules] mastery_hits` | Reads needed per word before the level goes up |
 | `[speech] device` | Which mic to use |
 | `[camera] index` | Which camera to use |
+
+## Hardware
+
+| Hardware | Details |
+|---|---|
+| Laptop (development) | Any webcam and mic |
+| Raspberry Pi 4 (target) | USB webcam and a USB conference mic. The camera, pose and speech work runs in separate processes. A lighter MoveNet pose backend is planned for the Pi. |
+
+## Project layout
+
+| Path | Contents |
+|---|---|
+| `word_punch/game/` | Game rules: no pygame, fully unit tested |
+| `word_punch/vision/` | Camera + pose process, player tracker, punch detector |
+| `word_punch/speech/` | Mic + Vosk process, word matcher (homophones, letter names/sounds) |
+| `word_punch/ui/` | Rendering, effects, synthesized sound effects |
+| `word_punch/data/words.toml` | Word lists, homophones, letter aliases |
+| `tools/` | Model downloader and test tools |
+
+## Roadmap
+
+- [x] Speech + pose pipelines, test tools
+- [x] Playable game: 3 modes, scoring, lives/gentle, adaptive speed, level mastery
+- [ ] Kid profiles with saved progress
+- [ ] Recorded voice reads missed words aloud (Piper TTS)
+- [ ] Hands-free menus (hover to select), results screen
+- [ ] Raspberry Pi 4 port (MoveNet backend, benchmarks, kiosk autostart)
+
+Font: [Andika](https://software.sil.org/andika/) by SIL International (OFL), designed for beginning readers.
