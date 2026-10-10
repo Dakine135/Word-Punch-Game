@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DATA = Path(__file__).parent / "data" / "words.toml"
+USER_ALIASES = Path(__file__).parent.parent / "aliases.toml"  # learned/added sound-alikes (git-ignored)
 
 LETTER_LEVEL = "letters"
 
@@ -30,7 +31,7 @@ class Level:
 
 
 class WordBank:
-    def __init__(self, path: Path = DATA):
+    def __init__(self, path: Path = DATA, user_aliases: Path | None = USER_ALIASES):
         data = tomllib.loads(path.read_text(encoding="utf-8"))
         self.order: list[str] = data["order"]
         self.levels: dict[str, Level] = {}
@@ -52,6 +53,21 @@ class WordBank:
             k: tuple(norm(w) for w in v) for k, v in data["letters"]["name"].items()}
         self.letter_sounds: dict[str, tuple[str, ...]] = {
             k: tuple(norm(w) for w in v) for k, v in data["letters"]["sound"].items()}
+
+        # Word sound-alikes (built in + user's aliases.toml).
+        self.aliases: dict[str, set[str]] = {}
+        sources = [data.get("aliases", {})]
+        if user_aliases and user_aliases.exists():
+            sources.append(tomllib.loads(user_aliases.read_text(encoding="utf-8")).get("aliases", {}))
+        list_words = {norm(x) for lvl in self.levels.values() if not lvl.is_letters for x in lvl.words}
+        list_words |= {m for x in list(list_words) for m in self.group(x)}
+        for src in sources:
+            for word, alikes in src.items():
+                for a in alikes:
+                    a = norm(a)
+                    # never let one list word stand in for another (that would skip reading)
+                    if a and a not in list_words:
+                        self.aliases.setdefault(norm(word), set()).add(a)
 
     def level(self, key: str) -> Level:
         return self.levels[key]
@@ -84,6 +100,39 @@ class WordBank:
         keys.update("letter:" + ch for ch in self.letters_sounding_like(text))
         return frozenset(keys)
 
+    def listen_tokens(self, text: str, is_letter: bool) -> set[str]:
+        """Every token that would unlock this one target."""
+        if is_letter:
+            ch = norm(text)
+            return set(self.letter_names.get(ch, ())) | set(self.letter_sounds.get(ch, ()))
+        return set(self.group(text)) | self.letters_sounding_like(text) | self.aliases_of(text)
+
+    def aliases_of(self, word: str) -> set[str]:
+        out: set[str] = set()
+        for member in self.group(word):
+            out |= self.aliases.get(member, set())
+        return out
+
+    def add_user_alias(self, word: str, heard: str, path: Path | None = None) -> bool:
+        """Remember that `heard` should count for `word` (saved in aliases.toml)."""
+        path = path or USER_ALIASES
+        word, heard = norm(word), norm(heard)
+        list_words = {norm(x) for lvl in self.levels.values() if not lvl.is_letters for x in lvl.words}
+        if not heard or heard in self.group(word) or heard in list_words:
+            return False
+        data = tomllib.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        al = data.setdefault("aliases", {})
+        al.setdefault(word, [])
+        if heard not in al[word]:
+            al[word].append(heard)
+        lines = ["# Extra sound-alikes that count for a word (added from tools/speech_spike.py F5)", "[aliases]"]
+        for k, v in sorted(al.items()):
+            key = k if k.replace("_", "").isalnum() else '"' + k.replace('"', '') + '"'
+            lines.append(f"{key} = [" + ", ".join('"' + x.replace('"', '') + '"' for x in v) + "]")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self.aliases.setdefault(word, set()).add(heard)
+        return True
+
     def vocab(self, level_keys) -> set[str]:
         """Every token the recognizer should listen for when these levels are in play."""
         tokens: set[str] = set()
@@ -97,6 +146,7 @@ class WordBank:
             else:
                 for w in lvl.words:
                     tokens.update(self.group(w))
+                    tokens.update(self.aliases_of(w))
         return tokens
 
     def all_vocab(self) -> set[str]:

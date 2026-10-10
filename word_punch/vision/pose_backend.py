@@ -11,12 +11,14 @@ from typing import Protocol
 import numpy as np
 
 # The keypoints the game uses. Backends map their own indices onto these names.
-KEYPOINTS = (
-    "nose",
+KEYPOINTS = (  # the 17 COCO body points (MoveNet uses the same set)
+    "nose", "left_eye", "right_eye", "left_ear", "right_ear",
     "left_shoulder", "right_shoulder",
     "left_elbow", "right_elbow",
     "left_wrist", "right_wrist",
     "left_hip", "right_hip",
+    "left_knee", "right_knee",
+    "left_ankle", "right_ankle",
 )
 
 

@@ -210,3 +210,20 @@ def test_scoring():
     combo = scoring.points(20, 10, 10, 5, c)
     assert slow == 20 and fast == 60 and combo == 30
     assert scoring.points(45, 10, 10, 0, c) > scoring.points(10, 10, 10, 0, c)
+
+
+def test_screen_vocab_is_only_whats_on_screen(bank):
+    g = make_game(bank, mode="split", levels=("k1", "letters"))
+    run(g, 3)
+    vocab = g.screen_vocab()
+    for w in g.words:
+        assert bank.listen_tokens(w.text, w.is_letter) <= vocab
+    # nothing from words that aren't on screen
+    on_screen = {w.text.lower() for w in g.words}
+    assert not ({"the", "is"} - on_screen) & vocab or {"the", "is"} & on_screen
+
+
+def test_listen_tokens(bank):
+    assert {"a", "uh"} <= bank.listen_tokens("a", False)
+    assert "r" in bank.listen_tokens("are", False)            # heard as the letter name
+    assert {"bee", "but"} <= bank.listen_tokens("B", True)     # letter name + sound

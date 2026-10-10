@@ -18,6 +18,7 @@ from .ui.menu import Button, Menu, Pointers, draw_button, update_buttons
 from .ui.mic_meter import draw_mic_meter
 from .ui.render import GOLD, PLAYER_COLORS, Renderer
 from .ui.settings import SettingsScreen
+from .ui.skeleton import SkeletonLayer
 from .ui.sfx import Sfx
 from .words import WordBank
 
@@ -88,6 +89,9 @@ class App:
         self.sfx.set_volume(cfg["game"].get("volume", 100))
         self.debug = args.debug or cfg["game"].get("debug", False)
         self.pending_restart: dict[str, float] = {}
+        self.skeletons = SkeletonLayer(self.size)
+        self.mouse_moved_at = 0.0
+        self._cursor_visible = None
         self.settings_screen: SettingsScreen | None = None
         self.show_typing = True  # the "say:" box when there's no mic
         self.paused = False
@@ -205,7 +209,12 @@ class App:
             self.saved_final = True
 
     def _sync_vocab(self):
-        vocab = self.game.vocab()
+        if self.cfg["speech"].get("grammar", "screen") == "screen":
+            vocab = self.game.screen_vocab()
+            if not vocab:
+                return  # nothing to read right now; keep listening for the last words
+        else:
+            vocab = self.game.vocab()
         if vocab != getattr(self, "_vocab", None):
             self._vocab = vocab
             self.speech.set_vocab(vocab)
@@ -217,6 +226,8 @@ class App:
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
                 return False
+            if e.type == pygame.MOUSEMOTION:
+                self.mouse_moved_at = now
             if e.type == pygame.KEYDOWN and display.is_toggle_key(e):
                 display.toggle_fullscreen()
                 self._update_cursor()
@@ -282,8 +293,26 @@ class App:
         return True
 
     def _update_cursor(self):
-        # Hide the mouse pointer in fullscreen when the camera does the punching.
-        pygame.mouse.set_visible(not (self.vision and display.is_fullscreen()))
+        """Mouse pointer: always in menus; during play (fullscreen + camera) only after it moves."""
+        playing = self.state == "playing" and not self.game.over and not self.paused
+        hide = playing and self.vision and display.is_fullscreen() and time.time() - self.mouse_moved_at > 2.5
+        if self._cursor_visible != (not hide):
+            self._cursor_visible = not hide
+            pygame.mouse.set_visible(not hide)
+
+    def draw_skeletons(self, surf: pygame.Surface) -> None:
+        if not (self.vision and self.cfg["game"].get("skeletons", True)):
+            return
+        self.skeletons.begin()
+        for s in self.tracker.slots:
+            if not s.person:
+                continue
+            idx = s.index
+            if self.state == "playing" and self.game.mode == "split":
+                x, _ = self.view.to_screen(s.person.center_x, 0.5)
+                idx = self.game.lane_at(x).players[0]
+            self.skeletons.add(self.view, s.person, PLAYER_COLORS[idx % 3])
+        self.skeletons.end(surf)
 
     # ---- hooks for tools that extend the game (e.g. tools/punch_playground.py) -------
 
@@ -299,7 +328,24 @@ class App:
 
     def say(self, word: str, now: float):
         self.heard_log.append(word)
-        self.game.heard(word, now)
+        target = self.game.heard(word, now)
+        self.log_speech("heard", word, target)
+
+    def log_speech(self, kind: str, token: str, target) -> None:
+        """logs/game_<time>.csv: what was heard, what it unlocked, what was on screen."""
+        if getattr(self, "_speech_log", None) is None:
+            import csv
+            from .config import ROOT
+            (ROOT / "logs").mkdir(exist_ok=True)
+            path = ROOT / "logs" / f"game_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+            self._speech_log_file = open(path, "w", newline="", encoding="utf-8")
+            self._speech_log = csv.writer(self._speech_log_file)
+            self._speech_log.writerow(["time", "event", "heard", "unlocked", "locked_on_screen", "players"])
+        on_screen = " ".join(w.text for w in self.game.words if not w.unlocked)
+        players = " ".join(f"{p.name}:{lvl}" for p, lvl in zip(self.game.players, self.args.levels))
+        self._speech_log.writerow([time.strftime("%H:%M:%S"), kind, token,
+                                   target.text if target else "", on_screen, players])
+        self._speech_log_file.flush()
 
     def poll_speech(self, now: float):
         if not self.speech:
@@ -311,6 +357,8 @@ class App:
             elif isinstance(ev, Voice):
                 self.heard_log.append("?")
                 self.game.voice(now)
+                if self.state == "playing":
+                    self.log_speech("sound", "?", None)
 
     def poll_vision(self, now: float):
         if not self.vision:
@@ -414,11 +462,13 @@ class App:
         if self.state == "menu" and self.menu.screen == "settings":
             if self.settings_screen is None:
                 self.settings_screen = SettingsScreen(self)
+            self.draw_skeletons(surf)
             self.settings_screen.draw(surf, now)
             r.draw_hands(surf, self.hands, now)
             pygame.display.flip()
             return
         if self.state == "menu":
+            self.draw_skeletons(surf)
             self.menu.draw(surf, now)
             r.draw_hands(surf, self.hands, now)
             self.effects.draw(surf)
@@ -426,6 +476,7 @@ class App:
                 self._draw_debug(surf)
             pygame.display.flip()
             return
+        self.draw_skeletons(surf)
         r.draw_background(surf, self.game)
         r.draw_words(surf, self.game, now)
         self.effects.draw(surf)
@@ -464,7 +515,7 @@ class App:
         pygame.display.flip()
 
     def _pointers(self) -> Pointers:
-        mouse = pygame.mouse.get_pos() if pygame.mouse.get_visible() and pygame.mouse.get_focused() else None
+        mouse = pygame.mouse.get_pos() if pygame.mouse.get_focused() else None
         return Pointers(hands=[(x, y) for _, x, y in self.hands], mouse=mouse,
                         clicks=self.frame_clicks, punches=self.frame_punches)
 
@@ -527,6 +578,7 @@ class App:
                 if not self.handle_events(now):
                     break
                 self.apply_restarts(now)
+                self._update_cursor()
                 self.poll_speech(now)
                 self.poll_vision(now)
                 if self.state == "menu":

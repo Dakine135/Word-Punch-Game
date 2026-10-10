@@ -33,6 +33,7 @@ class Button:
     latched: bool = False       # just fired; wait until pointers leave
     data: object = None
     mouse_only: bool = False    # grown-up buttons: a click, never a hand hover or punch
+    mouse_over: bool = False    # highlight only; the mouse never "holds" a button
 
 
 @dataclass
@@ -51,14 +52,14 @@ def update_buttons(buttons: list[Button], ptr: Pointers, dt: float) -> Button | 
         if not b.enabled:
             b.hover = 0
             continue
+        b.mouse_over = bool(ptr.mouse and b.rect.collidepoint(ptr.mouse))
+        if any(b.rect.collidepoint(p) for p in ptr.clicks):
+            fired = b
+            continue
         if b.mouse_only:
-            if any(b.rect.collidepoint(p) for p in ptr.clicks):
-                fired = b
             continue
         inside = [p for p in ptr.hands if b.rect.collidepoint(p)]
-        if ptr.mouse and b.rect.collidepoint(ptr.mouse):
-            inside.append(ptr.mouse)
-        if any(b.rect.collidepoint(p) for p in ptr.clicks + ptr.punches):
+        if any(b.rect.collidepoint(p) for p in ptr.punches):
             fired = b
         if not inside:
             b.latched = False
@@ -92,6 +93,7 @@ def draw_button(surface: pygame.Surface, r: Renderer, b: Button, now: float, foc
         f = pygame.Surface(fill.size, pygame.SRCALPHA)
         f.fill((255, 255, 255, 70))
         surface.blit(f, fill)
+    focused = focused or b.mouse_over
     border = WHITE if (b.selected or focused) else (180, 185, 210)
     pygame.draw.rect(surface, border, rect, 6 if (b.selected or focused) else 3, border_radius=22)
     label = r.hud_font.render(b.label, True, WHITE if b.enabled else DIM)

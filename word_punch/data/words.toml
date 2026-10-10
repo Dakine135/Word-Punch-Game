@@ -26,6 +26,7 @@ homophones = [
   ["some", "sum"],
   ["through", "threw"],
   ["were", "we're"],
+  ["a", "uh"],          # kids (and grown-ups) usually say "a" as "uh"
 ]
 
 
@@ -78,6 +79,43 @@ name = "1st - Q4"
 points = 45
 words = ["about", "sure", "laugh", "through", "great", "right", "these", "three", "first",
          "above", "write", "why", "enough", "together", "far", "full", "against"]
+
+# Word sound-alikes: what the recognizer often hears when a kid reads the word. They count
+# for the word (a little weaker than the real word). Add your own without editing this file:
+# aliases.toml at the project root, or press F5 in tools/speech_spike.py after a miss.
+[aliases]
+a = ["uh", "ah"]
+the = ["duh", "da"]
+is = ["his", "as"]
+you = ["yeah", "ya", "yu"]
+he = ["hee"]
+was = ["what's", "wuz"]
+said = ["set", "sad", "sed"]
+have = ["has", "half"]
+of = ["off", "uv"]
+do = ["due", "dew"]
+and = ["an", "end", "in"]
+what = ["watt", "wot"]
+your = ["you're", "yours", "yer"]
+they = ["day", "hey"]
+does = ["doze", "dust"]
+come = ["comb", "calm"]
+been = ["bin", "ben", "bean"]
+once = ["wants", "ones"]
+because = ["cause"]
+many = ["manny", "mini"]
+any = ["annie"]
+says = ["sez", "sex"]
+look = ["luke"]
+book = ["brook"]
+good = ["could"]
+water = ["waiter", "wader"]
+people = ["pupil"]
+pretty = ["purdy", "pity"]
+father = ["farther"]
+laugh = ["laff", "lap"]
+through = ["true", "threw"]
+enough = ["nuff"]
 
 # Letter aliases, keyed by lowercase letter.
 # `name` = saying the letter's name; `sound` = words a recognizer is likely to hear

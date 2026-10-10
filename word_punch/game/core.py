@@ -145,6 +145,14 @@ class Game:
     def vocab(self) -> set[str]:
         return self.bank.vocab(self.levels_in_play())
 
+    def screen_vocab(self) -> set[str]:
+        """Only the tokens that would unlock a word on screen right now (much more accurate)."""
+        tokens: set[str] = set()
+        for w in self.words:
+            if not w.unlocked and w.lane.alive:
+                tokens |= self.bank.listen_tokens(w.text, w.is_letter)
+        return tokens
+
     def lane_at(self, x: float) -> Lane:
         for lane in self.lanes:
             if lane.x0 <= x < lane.x1:

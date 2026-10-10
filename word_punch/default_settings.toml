@@ -35,6 +35,8 @@ device = ""              # mic name substring; "" = system default
 sample_rate = 16000
 use_partials = true      # react to words before the kid stops talking (faster, a bit less sure)
 min_confidence = 0.0     # drop final words below this confidence (0..1)
+grammar = "screen"       # "screen" = listen only for words on screen (best); "level" = all words in play
+voice_level = 0.45       # mic level (0..1) that counts as someone speaking
 
 [game]
 width = 1280
@@ -43,6 +45,7 @@ fullscreen = false
 fps = 60
 volume = 100         # sound effects, 0-100
 debug = false        # show fps / camera / mic info (F3 toggles)
+skeletons = true     # draw each player's body skeleton over the camera
 
 [rules]
 lives = 3                # per lane in split mode, shared in co-op / competitive

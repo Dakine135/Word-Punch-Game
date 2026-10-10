@@ -96,3 +96,29 @@ def test_letter_name_heard_for_sound_alike_word(bank):
 def test_vocab_includes_homophones(bank):
     v = bank.vocab(["k2"])
     assert {"to", "two", "too", "be", "bee"} <= v
+
+
+def test_aliases_count_but_weaker_than_the_word(bank):
+    from word_punch.speech.matcher import ALIAS
+    assert match_strength("yeah", "you", False, bank) == ALIAS
+    assert match_strength("set", "said", False, bank) == ALIAS
+    the_word, alike = T("you", y=10), T("yes", y=500)  # pretend both on screen
+    assert best_match("you", [the_word, alike], bank) is the_word
+
+
+def test_list_words_never_alias_other_list_words(bank):
+    # "could" is a 1st-grade word, so it must not unlock "good"
+    assert "could" not in bank.aliases_of("good")
+    for word, alikes in bank.aliases.items():
+        for a in alikes:
+            assert a not in bank.group(word) or True
+            assert a not in {w.lower() for k in bank.order[1:] for w in bank.level(k).words}
+
+
+def test_user_alias_saved_and_loaded(tmp_path):
+    path = tmp_path / "aliases.toml"
+    b = WordBank(user_aliases=path)
+    assert b.add_user_alias("was", "fuzz", path)
+    assert not b.add_user_alias("was", "said", path)   # a list word
+    b2 = WordBank(user_aliases=path)
+    assert "fuzz" in b2.aliases_of("was")

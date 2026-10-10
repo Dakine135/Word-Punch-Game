@@ -11,6 +11,8 @@ to logs/speech_test_<time>.csv. Shows two things for every attempt:
 Keys:
   type a word + Enter   test any word (it's added to what the game listens for)
   Space                 skip (counts as a miss)
+  F5                    after a miss: accept what it heard for that word from now on
+                        (saved in aliases.toml - the game uses it too)
   Tab / Shift+Tab       change mic (saved to settings.toml, the game uses it too)
   Esc                   clear typing / quit
 """
@@ -70,6 +72,17 @@ def main() -> int:
         cfg["speech"]["device"] = args.device
     words = [(w, bank.level(k).is_letters) for k in args.levels for w in bank.level(k).words]
     vocab = set(bank.vocab(args.levels))
+    grammar = cfg["speech"].get("grammar", "screen")
+
+    def listen_for(target):
+        """Like the game: the word shown + 3 other words (as if on screen), unless grammar = level."""
+        if grammar != "screen":
+            return set(vocab)
+        others = random.sample([w for w in words if w != target], min(3, len(words) - 1))
+        toks = set()
+        for text, is_letter in [target] + others:
+            toks |= bank.listen_tokens(text, is_letter)
+        return toks
 
     # Mic choices: "" = system default, then each input device by name.
     mics = [("", "System default")] + [(name, name) for _, name in list_input_devices()]
@@ -107,6 +120,7 @@ def main() -> int:
         log.flush()
 
     random.shuffle(words)
+    speech.set_vocab(listen_for(words[0]))
     idx, shown_at = 0, time.time()
     custom: tuple[str, bool] | None = None  # a typed-in test word
     typed = ""
@@ -120,6 +134,7 @@ def main() -> int:
     hits = misses = 0
     times: list[float] = []
     flash_until, flash_color = 0.0, (0, 0, 0)
+    note, note_until = "", 0.0
 
     def target_now() -> tuple[str, bool]:
         return custom if custom else words[idx % len(words)]
@@ -143,6 +158,7 @@ def main() -> int:
             if idx % len(words) == 0:
                 random.shuffle(words)
         shown_at, game_heard = time.time() + 0.5, []
+        speech.set_vocab(listen_for(target_now()))
         return dt
 
     try:
@@ -160,6 +176,23 @@ def main() -> int:
                         running = False
                 elif e.key == pygame.K_SPACE:
                     next_word("skip")
+                elif e.key == pygame.K_F5:
+                    # Accept the last miss's sound-alike for its word.
+                    miss = next((a for a in reversed(history) if not a.hit), None)
+                    cand = None
+                    if miss:
+                        said = [w for w, _ in miss.said if not match_strength(w, miss.target, False, bank)]
+                        game = [g.rstrip("~") for g in miss.game if g != "?"]
+                        cand = (said or game or [None])[0]
+                    if cand and bank.add_user_alias(miss.target, cand):
+                        vocab.add(cand)
+                        speech.set_vocab(listen_for(target_now()))
+                        note = f'Now "{cand}" counts for "{miss.target}"'
+                    elif miss:
+                        note = f'Nothing to add for "{miss.target}" (heard: {cand or "nothing"})'
+                    else:
+                        note = "No missed attempt yet"
+                    note_until = time.time() + 4
                 elif e.key == pygame.K_TAB:
                     step = -1 if e.mod & pygame.KMOD_SHIFT else 1
                     mic_idx = (mic_idx + step) % len(mics)
@@ -171,7 +204,7 @@ def main() -> int:
                         custom = (typed, is_letter)
                         if not is_letter and norm(typed) not in vocab:
                             vocab.add(norm(typed))
-                            speech.set_vocab(vocab)
+                        speech.set_vocab(listen_for(custom) | {norm(typed)})
                         typed, game_heard, shown_at = "", [], time.time()
                 elif e.key == pygame.K_BACKSPACE:
                     typed = typed[:-1]
@@ -287,10 +320,12 @@ def main() -> int:
                 f"hits {hits}   skips {misses}   avg time {avg:.1f}s   levels: {' '.join(args.levels)}",
                 True, TEXT), (20, 665))
             screen.blit(small.render(
-                "type a word + Enter = test it    Space = skip    Tab = change mic    Esc = quit",
+                "type a word + Enter = test   Space = skip   F5 = accept last miss   Tab = mic   Esc = quit",
                 True, DIM), (20, 700))
             if typed:
                 screen.blit(mid.render(f"test word: {typed}_   (Enter)", True, WARN), (20, 735))
+            elif now < note_until:
+                screen.blit(mid.render(note, True, GOOD), (20, 735))
 
             # Mic list on the right.
             x, y = 880, 360

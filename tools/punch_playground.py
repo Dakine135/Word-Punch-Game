@@ -31,7 +31,6 @@ from word_punch import config
 from word_punch.app import App, parse_args
 from word_punch.game.core import Event
 from word_punch.ui.render import GOLD, PLAYER_COLORS
-from word_punch.ui.skeleton import draw_skeleton
 from word_punch.words import WordBank
 
 PANEL = (10, 12, 26, 200)
@@ -41,6 +40,7 @@ DIM = (170, 175, 195)
 
 class Playground(App):
     def __init__(self, args, cfg, bank):
+        cfg["game"]["skeletons"] = False  # the playground draws its own (with the shoulder line)
         super().__init__(args, cfg, bank)
         self.show_typing = False
         self.auto_unlock = True
@@ -108,9 +108,12 @@ class Playground(App):
     def draw_overlay(self, surf: pygame.Surface, now: float) -> None:
         r = self.renderer
         if self.vision and self.show_skeleton:
+            self.skeletons.begin()
             for s in self.tracker.slots:
                 if s.person:
-                    draw_skeleton(surf, self.view, s.person, PLAYER_COLORS[s.index % 3])
+                    self.skeletons.add(self.view, s.person, PLAYER_COLORS[s.index % 3], alpha=220,
+                                       shoulder_line=True)
+            self.skeletons.end(surf)
 
         # settings panel (bottom right)
         pc, rules = self.cfg["punch"], self.cfg["rules"]

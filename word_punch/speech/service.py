@@ -95,6 +95,10 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
         free = vosk.KaldiRecognizer(model, rate)
         free.SetWords(True)
     last_partial = ""
+    pending_vocab = None        # applied between utterances so a word in progress isn't lost
+    pending_since = 0.0
+    in_utterance = False
+    loudest = 0.0               # loudest block in the current utterance
     audio_q: queue.Queue = queue.Queue()
     muted_until = 0.0
     sent: list[str] = []  # words of the current utterance already sent, by position
@@ -137,8 +141,7 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                 except queue.Empty:
                     break
                 if cmd == "vocab":
-                    rec = make_recognizer(arg)
-                    sent.clear()
+                    pending_vocab, pending_since = arg, time.time()
                 elif cmd == "mute":
                     muted_until = time.time() + arg
 
@@ -146,8 +149,13 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                 data = audio_q.get(timeout=0.1)
             except queue.Empty:
                 continue
-            out_q.put(("level", level_of(data)))
+            level = level_of(data)
+            out_q.put(("level", level))
             now = time.time()
+            if pending_vocab is not None and (not in_utterance or now - pending_since > 2.0):
+                rec = make_recognizer(pending_vocab)
+                pending_vocab, in_utterance, loudest = None, False, 0.0
+                sent.clear()
             if now < muted_until:
                 rec.Reset()
                 sent.clear()
@@ -166,14 +174,22 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                         last_partial = partial
                         out_q.put(("transcript", (partial, False, [])))
 
+            loudest = max(loudest, level)
             if rec.AcceptWaveform(data):
                 result = json.loads(rec.Result())
                 words = [w["word"] if w.get("conf", 1.0) >= cfg["min_confidence"] else "[unk]"
                          for w in result.get("result", [])]
                 send(words, now, True)
+                if not words and not sent and loudest >= cfg.get("voice_level", 0.45):
+                    # A clear sound the recognizer couldn't place (e.g. a very short "a").
+                    out_q.put(("voice", now))
                 sent.clear()
-            elif cfg["use_partials"]:
-                send(json.loads(rec.PartialResult()).get("partial", "").split(), now, False)
+                in_utterance, loudest = False, 0.0
+            else:
+                partial = json.loads(rec.PartialResult()).get("partial", "").split()
+                in_utterance = in_utterance or bool(partial) or level >= cfg.get("voice_level", 0.45)
+                if cfg["use_partials"]:
+                    send(partial, now, False)
 
 
 class SpeechService:
