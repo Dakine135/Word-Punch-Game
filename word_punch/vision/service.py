@@ -44,6 +44,7 @@ def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop) -> None:
     cap = cv2.VideoCapture(index, api)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))  # after the size, or DSHOW ignores it
     cap.set(cv2.CAP_PROP_FPS, cam_cfg["fps"])
     # Exposure: manual trades brightness for frame rate (auto drops fps in dim light).
     manual, auto = (0.25, 0.75) if api == getattr(cv2, "CAP_DSHOW", -1) else (1, 3)
@@ -56,6 +57,8 @@ def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop) -> None:
     if not cap.isOpened():
         out_q.put(("error", f"could not open camera {index} ({cam_name})"))
         return
+    got_w, got_h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    out_q.put(("camera", f"{cam_name} {got_w}x{got_h}"))
 
     latest = {"frame": None, "t": 0.0}
     lock = threading.Lock()
@@ -68,7 +71,7 @@ def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop) -> None:
                 time.sleep(0.01)
                 continue
             if bgr.shape[1] != w or bgr.shape[0] != h:
-                bgr = cv2.resize(bgr, (w, h))
+                bgr = cv2.resize(crop_to_aspect(bgr, w / h), (w, h), interpolation=cv2.INTER_AREA)
             rgb = cv2.cvtColor(cv2.flip(bgr, 1), cv2.COLOR_BGR2RGB)
             shared[:] = rgb
             with seq.get_lock():
@@ -101,6 +104,20 @@ def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop) -> None:
         backend.close()
         cap.release()
         shm.close()
+
+
+def crop_to_aspect(img: np.ndarray, aspect: float) -> np.ndarray:
+    """Center-crop to width/height = aspect (never stretch the picture)."""
+    ih, iw = img.shape[:2]
+    if abs(iw / ih - aspect) < 0.01:
+        return img
+    if iw / ih > aspect:  # too wide: trim the sides
+        nw = int(ih * aspect)
+        x = (iw - nw) // 2
+        return img[:, x:x + nw]
+    nh = int(iw / aspect)  # too tall: trim top and bottom
+    y = (ih - nh) // 2
+    return img[y:y + nh]
 
 
 def _is_windows() -> bool:

@@ -6,8 +6,10 @@ index = "auto"       # "auto" = USB webcam if plugged in, else built-in; or a nu
 name = ""            # prefer a camera whose name contains this, e.g. "C270"
 exposure = "auto"    # or a number: webcams drop to ~15 fps in dim rooms on auto. On Windows,
                      # -5 = 1/32 s (30 fps, darker), -4 = 1/16 s. More light in the room = faster.
+# 16:9 like the screen, so nothing gets cropped. Many webcams (the C270 included) show a
+# narrower, zoomed-in view at 640x480; 640x360 shows the sensor's full width.
 width = 640
-height = 480
+height = 360
 fps = 30
 
 [pose]
