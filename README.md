@@ -39,6 +39,15 @@ py -3.11 -m venv %USERPROFILE%\.venvs\word-punch
 
 (The venv lives outside OneDrive on purpose.)
 
+Desktop shortcut (double-click to play, fullscreen, no console window):
+
+```bash
+python tools/make_shortcut.py
+```
+
+It runs `launch_word_punch.pyw`; if the game ever stops with an error, details are in
+`logs/last_run.log`.
+
 ## Play
 
 ```bash

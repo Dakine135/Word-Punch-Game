@@ -87,7 +87,7 @@ class App:
         pygame.init()
         fullscreen = (args.fullscreen or cfg["game"]["fullscreen"]) and not args.windowed
         self.size = (cfg["game"]["width"], cfg["game"]["height"])
-        self.screen = display.open_window(self.size, fullscreen, "Word Punch")
+        self.screen = display.open_window(self.size, fullscreen, "Word Punch", cfg["game"].get("vsync", False))
         self.renderer = Renderer(self.size)
         self.renderer.color_fn = self._glove_color
         self.effects = Effects()

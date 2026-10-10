@@ -8,15 +8,19 @@ from __future__ import annotations
 import pygame
 
 
-def open_window(size: tuple[int, int], fullscreen: bool, caption: str) -> pygame.Surface:
+def open_window(size: tuple[int, int], fullscreen: bool, caption: str, vsync: bool = False) -> pygame.Surface:
+    """vsync is off by default: on some laptops it made every frame wait ~50 ms (18 fps);
+    the game already caps itself at 60 fps."""
     pygame.display.set_caption(caption)
     flags = pygame.SCALED | pygame.RESIZABLE
     if fullscreen:
         flags |= pygame.FULLSCREEN
-    try:
-        return pygame.display.set_mode(size, flags, vsync=1)
-    except pygame.error:
-        return pygame.display.set_mode(size, flags)  # no vsync available
+    if vsync:
+        try:
+            return pygame.display.set_mode(size, flags, vsync=1)
+        except pygame.error:
+            pass  # no vsync available
+    return pygame.display.set_mode(size, flags)
 
 
 def is_fullscreen() -> bool:

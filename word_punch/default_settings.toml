@@ -44,6 +44,7 @@ width = 1280
 height = 720
 fullscreen = false
 fps = 60
+vsync = false        # true can smooth tearing, but made some laptops drop to ~18 fps
 volume = 100         # sound effects, 0-100
 music = 35           # background music, 0-100
 debug = false        # show fps / camera / mic info (F3 toggles)
