@@ -36,3 +36,31 @@ width = 1280
 height = 720
 fullscreen = false
 fps = 60
+
+[rules]
+lives = 3                # per lane in split mode, shared in co-op / competitive
+gentle = false           # true = no lives; missed words bounce back and get read aloud
+mastery_hits = 2         # each word read this many times (fast enough) -> next level
+mastery_read_s = 4.0     # a read only counts toward mastery if it's this fast
+review_chance = 0.25     # chance a word comes from earlier levels (review)
+letters_easy = false     # true = any sound unlocks a lane's only letter (for the littlest)
+rocket_from = "bottom"   # "bottom" = fist rocket launches from the floor at the fist's x; "fist" = from the fist
+
+[difficulty]
+start_fall = 0.055       # fraction of screen height per second (~18 s to fall)
+min_fall = 0.035
+max_fall = 0.20
+start_interval = 3.5     # seconds between new words in a lane
+min_interval = 1.2
+max_interval = 5.0
+max_on_screen = 3        # per lane
+unlocked_slowdown = 0.4  # unlocked words fall at this fraction of speed (time to punch)
+fast_read_s = 2.0        # reads faster than this speed the game up
+ramp_up = 1.08
+ease_down = 0.88
+
+[scoring]
+read_target_s = 4.0      # reading faster than this earns up to 2x
+punch_target_s = 3.0     # punching faster than this earns up to 1.5x
+combo_step = 0.1         # +10% per combo, up to combo_max
+combo_max = 10
