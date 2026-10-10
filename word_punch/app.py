@@ -10,6 +10,7 @@ import pygame
 
 from . import config, rewards
 from .game.core import MODES, Game
+from .game.games import KINDS, TITLES, allowed_modes, make_game
 from .profiles import Profile, ProfileStore, apply_to_track, update_from_game
 from .ui import display
 from .ui.camera_view import CameraView
@@ -40,6 +41,8 @@ def parse_args(bank: WordBank, argv=None):
     ap = argparse.ArgumentParser(prog="word_punch", epilog=HELP,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mode", choices=MODES, default="split")
+    ap.add_argument("--game", choices=KINDS, default="classic", dest="kind",
+                    help="classic | catch | whack | boss | sentence")
     ap.add_argument("--player", action="append", metavar="NAME:LEVEL",
                     help="repeat for each player (1-3)")
     ap.add_argument("--gentle", action="store_true", help="no lives; missed words come back")
@@ -185,9 +188,12 @@ class App:
                 self.start_speech()
 
     def new_game(self):
-        self.game = Game(mode=self.args.mode, player_names=self.args.names,
-                         player_levels=self.args.levels, bank=self.bank, cfg=self.cfg,
-                         size=self.size, measure=self.renderer.measure, now=time.time())
+        mode = self.args.mode
+        if mode not in allowed_modes(self.args.kind, len(self.args.names)):
+            mode = allowed_modes(self.args.kind, len(self.args.names))[0]
+        self.game = make_game(self.args.kind, mode=mode, player_names=self.args.names,
+                              player_levels=self.args.levels, bank=self.bank, cfg=self.cfg,
+                              size=self.size, measure=self.renderer.measure, now=time.time())
         for i, prof in enumerate(self.player_profiles):
             track = self.game.track_for(i)
             if prof and track:
@@ -240,6 +246,8 @@ class App:
         for key in self.game.levels_in_play():
             lvl = self.bank.level(key)
             texts += [spoken(w, lvl.is_letters) for w in lvl.words]
+        if self.game.kind == "sentence":
+            texts += list(self.game.pool)
         self.voice.prepare(texts + PHRASES)
 
     def speak(self, *texts: str) -> None:
@@ -251,6 +259,7 @@ class App:
     def start_from_menu(self, req: dict) -> None:
         profiles = req["profiles"]
         self.args.mode = req["mode"]
+        self.args.kind = req.get("kind", "classic")
         self.args.names = [p.name for p in profiles]
         self.args.levels = [p.level for p in profiles]
         self.cfg["rules"]["gentle"] = req["gentle"]
@@ -372,6 +381,9 @@ class App:
             if e.type == pygame.MOUSEBUTTONDOWN and e.button in (1, 3, 2):
                 if self.game.over:
                     self.frame_clicks.append(e.pos)
+                    continue
+                if self.game.kind == "whack":
+                    self.game.touch({1: 0, 3: 1, 2: 2}[e.button], e.pos[0], e.pos[1], now)
                     continue
                 if self.style == "slice":
                     self._last_mouse = (now, *e.pos)
@@ -517,12 +529,17 @@ class App:
             self.pose_times.append(t)
             slots = self.tracker.update(people, t)
             for s in slots:
+                if playing and self.game.kind == "whack" and s.person:
+                    for hand in ("left_wrist", "right_wrist"):
+                        pt = self._hand_point(s.person, hand)
+                        if pt:
+                            self.game.touch(s.index, *self.view.to_screen(*pt), now)
                 if playing and self.style == "slice":
                     self._slice_from_pose(s, t, now)
                 for p in self.punchers[s.index].update(s.person, t):
                     x, y = self.view.to_screen(p.x, p.y)
                     self.frame_punches.append((x, y))
-                    if not playing or self.style == "slice":
+                    if not playing or self.style == "slice" or self.game.kind == "whack":
                         continue
                     player = self.game.lane_at(x).players[0] if self.game.mode == "split" else s.index
                     color = PLAYER_COLORS[player % 3]
@@ -620,6 +637,42 @@ class App:
                 fx.burst(ev.x, ev.y, [color, (255, 255, 255)], n=60, speed=600)
                 if ev.text == "freeze":
                     fx.flash((150, 220, 255))
+            elif k == "target":
+                self.speak("Find", spoken(ev.text, ev.word.is_letter))
+            elif k == "wrong" and self.game.kind == "catch":
+                self.sfx.play("clang")
+                fx.float_text("Oops!", ev.x, ev.y - 40, (255, 150, 150), r.pop_font, life=1.0)
+                self.speak("Oops! That says", spoken(ev.word.text, ev.word.is_letter))
+            elif k == "wrong":
+                self.sfx.play("clang")
+                fx.float_text("Not yet!", ev.x, ev.y - 40, (255, 200, 120), r.pop_font, life=1.0)
+            elif k == "duck":
+                self.sfx.play("bounce")
+            elif k == "place":
+                self.sfx.play("unlock")
+                fx.sparkle(self.size[0] / 2, self.game.bar_y, GOLD, 24)
+            elif k == "sentence_done":
+                self.sfx.play("win")
+                self.speak(ev.text)
+                for i in range(5):
+                    fx.burst(self.size[0] * (0.2 + 0.15 * i), self.game.bar_y, [GOLD, (255, 255, 255), (120, 220, 255)],
+                             n=40, speed=500)
+            elif k == "boss_hit":
+                fx.shake = 12
+                fx.burst(self.game.boss_x, self.game.boss_y, [(255, 80, 80), (255, 255, 255)], n=25, speed=500)
+            elif k == "boss_final":
+                self.speak("Final word!")
+                fx.float_text("FINAL WORD!", self.size[0] / 2, self.size[1] * 0.86, (255, 90, 90), r.big_font,
+                              life=2.0, rise=10, pop=True)
+            elif k == "boss_defeated":
+                self.speak("You beat the boss!")
+                for i in range(8):
+                    fx.burst(ev.x + (i - 3.5) * 40, ev.y, [GOLD, (255, 90, 90), (255, 255, 255), (150, 100, 255)],
+                             n=60, speed=900)
+                fx.ring(ev.x, ev.y, (255, 255, 255), r0=20, r1=500, life=0.7, width=16)
+            elif k == "tag_wrong":
+                fx.float_text("Your buddy punches!", ev.x, max(ev.y, self.size[1] * 0.5), (255, 220, 150),
+                              r.pop_font, life=1.2)
             elif k == "vanish":
                 fx.sparkle(ev.x, ev.y, GOLD, 14)
             elif k == "lane_done":
@@ -667,17 +720,37 @@ class App:
         self.draw_skeletons(surf)
         self.draw_hats(surf)
         r.draw_background(surf, self.game)
+        kind = self.game.kind
+        if kind == "boss":
+            r.draw_boss(surf, self.game, now)
+        if kind == "whack":
+            r.draw_holes(surf, self.game)
         r.draw_words(surf, self.game, now)
+        if kind == "whack":
+            r.draw_holes(surf, self.game, front=True)
         self.effects.draw(surf)
         r.draw_rockets(surf, self.game, now)
         r.draw_blades(surf, self.blades, now)
         r.draw_hands(surf, self.hands, now)
         r.draw_lane_out(surf, self.game, now)
         r.draw_hud(surf, self.game, now)
+        if kind == "sentence":
+            r.draw_sentence_bar(surf, self.game, now)
+        elif kind == "catch" and self.game.target is not None:
+            r.draw_listen(surf, self.game, now)
         self.effects.draw_texts(surf)
         if now - self.game_started < 12 and not self.game.over:
-            r.draw_say_hint(surf, "Read the word out loud, then " +
-                            ("SLICE it with a fast swipe!" if self.style == "slice" else "punch up under it!"))
+            act = "SLICE it with a fast swipe!" if self.style == "slice" else "punch up under it!"
+            hint = {
+                "catch": "Listen to the word, then hit the one that matches!",
+                "whack": "Read the word, then WHACK it before it hides!",
+                "boss": "Read the words and " + ("slice" if self.style == "slice" else "punch") + " them to hurt the boss!",
+                "sentence": "Read the words and hit them in order to build the sentence!",
+            }.get(kind, "Read the word out loud, then " + act)
+            if self.game.mode == "tag":
+                hint = f"{self.game.players[0].name} reads, the buddy " + \
+                       ("slices!" if self.style == "slice" else "punches!")
+            r.draw_say_hint(surf, hint)
         if self.args.no_mic and self.show_typing:
             t = r.hud_font.render(f"say: {self.typed}_", True, (255, 255, 255))
             surf.blit(t, (14, self.size[1] - t.get_height() - 30))
@@ -817,7 +890,7 @@ class App:
         return 0
 
 
-PHRASES = ["This word says", "Find", "Great job!", "You did it!", "Round complete!", "Try again!",
+PHRASES = ["Final word!", "You beat the boss!", "This word says", "Find", "Great job!", "You did it!", "Round complete!", "Try again!",
            "Oops! That says", "Level up!", "Read the words, then punch!", "Read the words, then slice!"]
 
 

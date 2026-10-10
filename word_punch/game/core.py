@@ -22,7 +22,7 @@ from . import scoring
 from .difficulty import Difficulty
 from .track import Track
 
-MODES = ("split", "coop", "competitive")
+MODES = ("split", "coop", "competitive", "tag")  # tag: player 1 reads, the others punch
 ROUND_ENDS = ("lives", "words", "time", "level")
 POWERS = ("gold", "freeze", "giant")  # double points / stop falling 5 s / giant gloves 10 s
 FREEZE_S, GIANT_S = 5.0, 10.0
@@ -60,6 +60,18 @@ class FallingWord:
     misses: int = 0  # times it hit the floor (gentle mode)
     last_clang: float = -1e9
     power: str = ""  # "" or one of POWERS
+    # used by the other games (games.py)
+    scale: float = 1.0      # pop-up animation (whack)
+    neutral: bool = False   # drawn plain - catch: every word is hittable, you have to find the right one
+    big: bool = False       # boss's final word
+    hits: int = 1           # hits needed to break
+    slot: int = -1          # position in a sentence
+    hole: int = -1          # whack-a-word hole
+    pop_at: float = 0.0
+    down_at: float = 0.0
+    ax: float = 0.0         # floating anchor (sentence)
+    ay: float = 0.0
+    phase: float = 0.0
 
 
 @dataclass(eq=False)
@@ -109,6 +121,8 @@ class Event:
 
 
 class Game:
+    kind = "classic"  # subclasses in games.py: catch | whack | boss | sentence
+
     def __init__(self, *, mode: str, player_names: list[str], player_levels: list[str],
                  bank: WordBank, cfg: dict, size: tuple[int, int], measure: Measure,
                  rng: random.Random | None = None, now: float = 0.0):
@@ -145,6 +159,10 @@ class Game:
                      [Track(bank, player_levels[i], self.rules, owner=i)],
                      Difficulty(self.diff_cfg), [i], lives)
                 for i in range(n)]
+        elif mode == "tag":
+            # Tag team: words at the reader's level; the reader reads, the buddy punches.
+            self.lanes = [Lane(0, 0, self.w, [Track(bank, player_levels[0], self.rules, owner=0)],
+                               Difficulty(self.diff_cfg), list(range(n)), lives)]
         elif mode == "coop":
             # One sky; words alternate between each kid's level.
             tracks = [Track(bank, lvl, self.rules, owner=i) for i, lvl in enumerate(player_levels)]
@@ -236,7 +254,16 @@ class Game:
             target.unlocked_at = now
             target.read_time = now - target.spawned_at
             self.events.append(Event("unlock", target, x=target.x, y=target.y))
+            if self.mode == "tag":
+                self.players[0].score += 5  # the reader scores for reading
         return target
+
+    def _tag_blocked(self, player: int, x: float, y: float) -> bool:
+        """Tag team: the reader (player 1) doesn't punch - their buddy does."""
+        if self.mode == "tag" and player == 0 and len(self.players) > 1:
+            self.events.append(Event("tag_wrong", player=0, x=x, y=y))
+            return True
+        return False
 
     def voice(self, now: float) -> None:
         """Forgiving letter mode: any sound unlocks a lane's only locked letter."""
@@ -255,6 +282,8 @@ class Game:
             player = lane.players[0]  # whoever owns the lane under the fist
         if not lane.alive or player >= len(self.players):
             return None
+        if self._tag_blocked(player, x, y if y is not None else self.floor):
+            return None
         start_y = self.floor if self.rules["rocket_from"] == "bottom" or y is None else y
         radius = self.h * 0.045 * (2.4 if now < lane.giant_until else 1.0)
         rocket = Rocket(player, x, start_y, lane, radius=radius)
@@ -270,7 +299,7 @@ class Game:
         lane = self.lane_at(mx)
         if self.mode == "split":
             player = lane.players[0]
-        if player >= len(self.players):
+        if player >= len(self.players) or self._tag_blocked(player, mx, (y0 + y1) / 2):
             return []
         angle = math.atan2(y1 - y0, x1 - x0)
         cut = []
@@ -291,14 +320,22 @@ class Game:
     # ---- simulation ----------------------------------------------------------------
 
     def update(self, dt: float, now: float) -> None:
-        if self.over:
+        if self.over or self._time_up(now):
             return
+        self._update_spawns(dt, now)
+        self._update_falling(dt, now)
+        self._update_rockets(dt, now)
+
+    def _time_up(self, now: float) -> bool:
         if self.round_end == "time" and now - self.started_at >= self.round_seconds:
             for lane in self.lanes:
                 if lane.alive:
                     self._finish_lane(lane)
             self._check_over()
-            return
+            return True
+        return False
+
+    def _update_spawns(self, dt: float, now: float) -> None:
         for lane in self.lanes:
             if not lane.alive:
                 continue
@@ -310,9 +347,10 @@ class Game:
                 else:
                     lane.spawn_timer = 0.3  # nothing fit; try again shortly
 
+    def _update_falling(self, dt: float, now: float) -> None:
         for w in list(self.words):
             speed = w.lane.difficulty.fall * self.h
-            if w.unlocked:
+            if w.unlocked and not w.neutral:  # read words slow down (time to punch); catch words don't
                 speed *= self.diff_cfg["unlocked_slowdown"]
             if now < w.lane.freeze_until:
                 speed = 0.0
@@ -320,6 +358,7 @@ class Game:
             if w.y + w.h / 2 >= self.floor:
                 self._word_hit_floor(w, now)
 
+    def _update_rockets(self, dt: float, now: float) -> None:
         rocket_speed = self.h * 1.8
         for r in self.rockets:
             r.y -= rocket_speed * dt
@@ -344,6 +383,14 @@ class Game:
     def _collides(self, r: Rocket, w: FallingWord) -> bool:
         return (abs(r.x - w.x) <= w.w / 2 + r.radius * 0.6
                 and abs(r.y - w.y) <= w.h / 2 + r.radius)
+
+    def _pick(self, track):
+        """A word for this track that doesn't sound like anything on screen."""
+        taken = set().union(*(self.bank.sound_keys(w.text, w.is_letter) for w in self.words))
+        for pick in track.candidates(self.rng):
+            if not self.bank.sound_keys(pick.text, pick.is_letter) & taken:
+                return pick
+        return None
 
     def _spawn(self, lane: Lane, now: float) -> FallingWord | None:
         track = next(lane.next_track)

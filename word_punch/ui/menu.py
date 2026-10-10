@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import pygame
 
 from .. import rewards
+from ..game.games import KINDS, TITLES, allowed_modes
 from ..profiles import Profile, ProfileStore
 from ..words import WordBank
 from .render import GOLD, PLAYER_COLORS, WHITE, Renderer
@@ -143,6 +144,7 @@ class Menu:
         self.max_players = max_players
         self.joined: list[Profile] = []
         self.mode = "split"
+        self.kind = "classic"
         self.screen = "who"
         self.countdown_until = 0.0
         self.setup = SetupScreen(self)
@@ -185,14 +187,42 @@ class Menu:
                               (70, 75, 100), mouse_only=True))
         return buttons
 
+    GAME_INFO = {
+        "classic": ("Word Punch", "read it, punch it", (220, 130, 40)),
+        "catch": ("Catch the Word", "listen and find it", (60, 150, 210)),
+        "whack": ("Whack-a-Word", "words pop up!", (120, 170, 60)),
+        "boss": ("Boss Battle", "beat the monster", (200, 70, 90)),
+        "sentence": ("Sentence Builder", "words in order", (150, 90, 200)),
+    }
+
+    def _game_buttons(self) -> list[Button]:
+        bw, bh, gap = 360, 150, 30
+        readers = any(not self.bank.level(p.level).is_letters for p in self.joined)
+        buttons = []
+        for i, kind in enumerate(KINDS):
+            row, col = divmod(i, 3)
+            n_in_row = 3 if row == 0 else len(KINDS) - 3
+            x0 = (self.w - (n_in_row * bw + (n_in_row - 1) * gap)) // 2
+            title_, sub, color = self.GAME_INFO[kind]
+            ok = readers or kind != "sentence"
+            buttons.append(Button(f"game:{kind}", pygame.Rect(x0 + col * (bw + gap), 170 + row * (bh + 28), bw, bh),
+                                  title_, sub if ok else "for readers", color, enabled=ok))
+        buttons.append(Button("back", pygame.Rect(self.w // 2 - 150, self.h - 130, 300, 80), "Back", "", (90, 90, 110)))
+        return buttons
+
     def _mode_buttons(self) -> list[Button]:
         n = len(self.joined)
         bw, bh, gap = 340, 210, 30
-        modes = [("split", "Own sides", "your own words"),
-                 ("coop", "Team up", "share the sky"),
-                 ("competitive", "Race", "same words, fastest punch")]
+        names = [p.name for p in self.joined]
+        info = {"split": ("Own sides", "your own words"),
+                "coop": ("Team up", "share the sky"),
+                "competitive": ("Race", "fastest wins"),
+                "tag": ("Tag team", f"{names[0]} reads, {names[1]} hits" if n > 1 else "")}
+        modes = [(m, *info[m]) for m in allowed_modes(self.kind, n)]
         if n == 1:
-            modes = [("split", "Play!", "")]
+            modes = [(modes[0][0], "Play!", "")]
+        if len(modes) == 4:
+            bw, gap = 270, 22
         x0 = (self.w - (len(modes) * bw + (len(modes) - 1) * gap)) // 2
         buttons = [Button(f"mode:{m}", pygame.Rect(x0 + i * (bw + gap), 190, bw, bh), label, sub,
                           (200, 120, 40) if m == "competitive" else (60, 120, 200) if m == "coop" else (70, 160, 90))
@@ -246,7 +276,7 @@ class Menu:
             if now >= self.countdown_until:
                 self.screen = "who"
                 return {"profiles": list(self.joined), "mode": self.mode, "gentle": self.gentle,
-                        "style": self.style}
+                        "style": self.style, "kind": self.kind}
             return None
 
         if self.screen == "settings":
@@ -258,11 +288,13 @@ class Menu:
             if e.key == pygame.K_s and self.screen == "who":
                 self.screen = "settings"
                 return None
-            if e.key == pygame.K_BACKSPACE and self.screen == "mode":
-                self.screen = "who"
+            if e.key == pygame.K_BACKSPACE and self.screen in ("mode", "game"):
+                self.screen = "game" if self.screen == "mode" else "who"
 
         if self.screen == "closet":
             buttons = self._closet_buttons()
+        elif self.screen == "game":
+            buttons = self._game_buttons()
         else:
             buttons = self._who_buttons() if self.screen == "who" else self._mode_buttons()
         self._carry_hover(buttons)
@@ -277,9 +309,10 @@ class Menu:
             elif len(self.joined) < self.max_players:
                 self.joined.append(p)
         elif fired.key == "next":
+            self.screen = "game"
+        elif fired.key.startswith("game:"):
+            self.kind = fired.key.split(":", 1)[1]
             self.screen = "mode"
-            if len(self.joined) == 1:
-                self.mode = "split"
         elif fired.key.startswith("mode:"):
             self.mode = fired.key.split(":", 1)[1]
             self.screen = "countdown"
@@ -289,7 +322,7 @@ class Menu:
         elif fired.key == "style":
             self.style = "slice" if self.style == "punch" else "punch"
         elif fired.key == "back":
-            self.screen = "who"
+            self.screen = "game" if self.screen == "mode" else "who"
         elif fired.key == "settings":
             self.screen = "settings"
         elif fired.key == "closet":
@@ -329,13 +362,17 @@ class Menu:
             return
         buttons = getattr(self, "_buttons", None) or (
             self._closet_buttons() if self.screen == "closet" else
+            self._game_buttons() if self.screen == "game" else
             self._who_buttons() if self.screen == "who" else self._mode_buttons())
         if self.screen == "closet":
             self._draw_closet(surface, now)
             for b in buttons:
                 draw_button(surface, r, b, now)
             return
-        if self.screen == "who":
+        if self.screen == "game":
+            title(surface, r, "Pick a game!", 90)
+            hint(surface, r, "Hold your hand on a game")
+        elif self.screen == "who":
             title(surface, r, "Who's playing?", 90)
             hint(surface, r, "Hold your hand on your name (or punch it!)      P = players   S = settings")
         else:
@@ -391,7 +428,11 @@ class Menu:
         t = pygame.transform.rotozoom(r.big_font.render(text, True, GOLD), 0, 1.8 * k)
         surface.blit(t, t.get_rect(center=(self.w // 2, self.h // 2 - 40)))
         names = self.joined
-        if self.mode == "split" and len(names) > 1:
+        if self.mode == "tag" and len(names) > 1:
+            label = r.hud_font.render(f"{names[0].name} reads (stand left)   -   "
+                                      f"{', '.join(p.name for p in names[1:])} punches (stand right)", True, WHITE)
+            surface.blit(label, label.get_rect(center=(self.w // 2, self.h - 100)))
+        elif self.mode == "split" and len(names) > 1:
             lane_w = self.w / len(names)
             for i, p in enumerate(names):
                 cx = int(lane_w * (i + 0.5))
@@ -406,7 +447,8 @@ class Menu:
             order = "   ".join(p.name for p in names)
             label = r.hud_font.render(f"Stand left to right:   {order}", True, WHITE)
             surface.blit(label, label.get_rect(center=(self.w // 2, self.h - 100)))
-        mode_name = {"split": "Own sides", "coop": "Team up", "competitive": "Race"}[self.mode]
+        mode_name = TITLES[self.kind] + "  -  " + {"split": "Own sides", "coop": "Team up", "competitive": "Race",
+                                                    "tag": "Tag team"}[self.mode]
         style = "slice" if self.style == "slice" else "punch"
         sub = r.hud_font.render(f"{mode_name}  -  {style}  -  {'no lives' if self.gentle else 'lives'}", True, DIM)
         surface.blit(sub, sub.get_rect(center=(self.w // 2, 120)))

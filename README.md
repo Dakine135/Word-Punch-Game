@@ -17,6 +17,17 @@ A reading game: sight words (or letters) fall from the sky over a mirrored camer
   the race mode is first to the goal. Each side shows "Finished!", then "Round complete!"
 - **Punch or Slice**: rocket punches, or swipe through words Fruit-Ninja style (picked on the
   mode screen; mouse drag slices in `--sim`)
+- **Five games** (picked on the start screen):
+  - *Word Punch*: read the falling words, then punch or slice them
+  - *Catch the Word*: the game says a word, find it and hit it (no reading aloud needed)
+  - *Whack-a-Word*: words pop out of holes; read it, whack it before it hides
+  - *Boss Battle*: break words to hurt the monster, then beat its final 3-hit word
+  - *Sentence Builder*: read and hit floating words in order to build a sentence
+  - plus a *Tag team* mode: one kid reads, the other punches
+- **Rewards**: up to 3 stars per round unlock camera hats and glove/blade colours
+  (Dress up! on the start screen); golden, freeze and giant power-up words; music
+- **Voice**: missed words are read aloud (offline Piper voice)
+- **Parent report**: Players screen (P) -> G opens a printable progress page per kid
 
 ## Setup (Windows laptop)
 
@@ -35,6 +46,8 @@ python -m word_punch --player Sam:k3 --player Max:letters
 python -m word_punch --mode coop --gentle --player Sam:k2 --player Max:letters
 python -m word_punch --mode competitive --player Sam:k2 --player Max:k1
 python -m word_punch --sim     # no camera/mic: type a word + Enter to "say" it, click to punch
+python -m word_punch --game boss --mode coop --player Sam:k3 --player Max:letters
+python -m word_punch.report   # parent progress report
 ```
 
 **Levels:** `letters k1 k2 k3 k4 g1q1 g1q2 g1q3 g1q4`

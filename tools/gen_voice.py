@@ -28,6 +28,8 @@ def main() -> int:
     for key in bank.order:
         lvl = bank.level(key)
         texts += [spoken(w, lvl.is_letters) for w in lvl.words]
+    from word_punch.game.games import load_sentences
+    texts += [s for s, _ in load_sentences(bank)]  # read aloud when a sentence is built
     texts += list(sys.argv[1:])
     t = time.time()
     made = 0

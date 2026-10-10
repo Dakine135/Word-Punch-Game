@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pygame
 
+import re
+
 from ..game.core import Event, Game
 
 FONTS = Path(__file__).resolve().parent.parent.parent / "assets" / "fonts"
@@ -104,35 +106,157 @@ class Renderer:
 
     def draw_words(self, surface: pygame.Surface, game: Game, now: float) -> None:
         for w in game.words:
-            rect = pygame.Rect(0, 0, w.w, w.h)
-            rect.center = (int(w.x), int(w.y))
-            f = self.letter_font if w.is_letter else self.word_font
+            if w.scale <= 0.03:
+                continue
+            f = self.big_font if w.big else self.letter_font if w.is_letter else self.word_font
             radius = int(w.h * 0.3)
-            if w.unlocked:
+            pad = 16
+            blk = pygame.Surface((w.w + 2 * pad, w.h + 2 * pad), pygame.SRCALPHA)
+            rect = pygame.Rect(pad, pad, w.w, w.h)
+            if w.neutral:  # catch: plain, all look the same - find it by reading
+                pygame.draw.rect(blk, (248, 248, 252), rect, border_radius=radius)
+                pygame.draw.rect(blk, (120, 130, 175), rect, 4, border_radius=radius)
+                txt = self._text(w.text, f, INK)
+            elif w.unlocked:
                 pulse = 0.5 + 0.5 * math.sin(now * 10 + w.id)
-                glow = rect.inflate(18 + 10 * pulse, 18 + 10 * pulse)
-                g = pygame.Surface(glow.size, pygame.SRCALPHA)
-                pygame.draw.rect(g, (255, 236, 140, 170), g.get_rect(), border_radius=radius + 8)
-                surface.blit(g, glow)
-                pygame.draw.rect(surface, GOLD, rect, border_radius=radius)
-                pygame.draw.rect(surface, WHITE, rect, 4, border_radius=radius)
+                glow = rect.inflate(10 + 10 * pulse, 10 + 10 * pulse)
+                pygame.draw.rect(blk, (255, 236, 140, 170), glow, border_radius=radius + 8)
+                pygame.draw.rect(blk, GOLD, rect, border_radius=radius)
+                pygame.draw.rect(blk, WHITE, rect, 4, border_radius=radius)
                 txt = self._text(w.text, f, INK)
             else:
-                block = pygame.Surface(rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(block, (35, 42, 70, 225), block.get_rect(), border_radius=radius)
-                surface.blit(block, rect)
-                pygame.draw.rect(surface, (150, 160, 200), rect, 3, border_radius=radius)
+                pygame.draw.rect(blk, (35, 42, 70, 225), rect, border_radius=radius)
+                pygame.draw.rect(blk, (150, 160, 200), rect, 3, border_radius=radius)
                 txt = self._text(w.text, f, WHITE)
-            surface.blit(txt, txt.get_rect(center=rect.center))
+            blk.blit(txt, txt.get_rect(center=rect.center))
+            if w.scale < 1.0:
+                sw, sh = max(1, int(blk.get_width() * w.scale)), max(1, int(blk.get_height() * w.scale))
+                blk = pygame.transform.smoothscale(blk, (sw, sh))
+                # pop up from the bottom (whack holes)
+                dest = blk.get_rect(midbottom=(int(w.x), int(w.y + (w.h / 2 + pad))))
+            else:
+                dest = blk.get_rect(center=(int(w.x), int(w.y)))
+            surface.blit(blk, dest)
+            screen_rect = pygame.Rect(0, 0, int(w.w * w.scale), int(w.h * w.scale))
+            screen_rect.center = dest.center
+            if w.scale < 0.9:
+                continue
             if w.power:
-                self._power_badge(surface, w, rect, now)
+                self._power_badge(surface, w, screen_rect, now)
             if now < w.lane.freeze_until:
-                ice = pygame.Surface(rect.size, pygame.SRCALPHA)
+                ice = pygame.Surface(screen_rect.size, pygame.SRCALPHA)
                 pygame.draw.rect(ice, (170, 230, 255, 90), ice.get_rect(), border_radius=radius)
-                surface.blit(ice, rect)
-                pygame.draw.rect(surface, (200, 240, 255), rect, 3, border_radius=radius)
+                surface.blit(ice, screen_rect)
+                pygame.draw.rect(surface, (200, 240, 255), screen_rect, 3, border_radius=radius)
+            if w.big and w.hits > 0:  # boss word: hits left
+                for i in range(w.hits):
+                    self._star(surface, screen_rect.centerx + (i - (w.hits - 1) / 2) * 44,
+                               screen_rect.bottom + 26, 16, 0.0, (255, 90, 90))
             for i in range(w.misses):  # gentle mode: how many times it fell
-                pygame.draw.circle(surface, (255, 120, 120), (rect.right - 10 - 14 * i, rect.top + 10), 5)
+                pygame.draw.circle(surface, (255, 120, 120), (screen_rect.right - 10 - 14 * i, screen_rect.top + 10), 5)
+
+    # ---- extras for the other games ------------------------------------------------------
+
+    def draw_holes(self, surface: pygame.Surface, game, front: bool = False) -> None:
+        """Whack-a-word holes; the front lip is drawn over the words so they rise out of it."""
+        for lane in game.lanes:
+            for x, y in getattr(lane, "holes", []):
+                r = pygame.Rect(0, 0, 210, 54)
+                r.center = (int(x), int(y + self.h * 0.055))
+                if front:
+                    pygame.draw.arc(surface, (120, 85, 55), r, math.pi, 2 * math.pi, 10)
+                else:
+                    pygame.draw.ellipse(surface, (20, 14, 10), r)
+                    pygame.draw.ellipse(surface, (120, 85, 55), r, 8)
+
+    def draw_boss(self, surface: pygame.Surface, game, now: float) -> None:
+        if getattr(game, "defeated", False):
+            return
+        x = game.boss_x + math.sin(now * 1.3) * 30
+        y = game.boss_y + math.sin(now * 2.1) * 8
+        r = game.boss_r
+        hurt = now < game.hurt_until
+        frac = game.boss_hp / max(1, game.boss_max)
+        body = (int(120 + 100 * (1 - frac)), int(70 + 90 * frac), int(170 * frac + 60)) if not hurt else (255, 255, 255)
+        shake = math.sin(now * 80) * 8 if hurt else 0
+        x += shake
+        # horns
+        for s in (-1, 1):
+            pygame.draw.polygon(surface, (240, 230, 200), [(x + s * r * 0.45, y - r * 0.7), (x + s * r * 0.9, y - r * 1.35),
+                                                             (x + s * r * 0.75, y - r * 0.55)])
+        pygame.draw.ellipse(surface, body, (x - r * 1.1, y - r, r * 2.2, r * 1.9))
+        pygame.draw.ellipse(surface, (30, 20, 40), (x - r * 1.1, y - r, r * 2.2, r * 1.9), 5)
+        # eyes look down at the kids; squint when hurt
+        for s in (-1, 1):
+            ex, ey = x + s * r * 0.42, y - r * 0.25
+            if hurt:
+                pygame.draw.line(surface, (30, 20, 40), (ex - 18, ey - 8), (ex + 18, ey + 8), 6)
+                pygame.draw.line(surface, (30, 20, 40), (ex - 18, ey + 8), (ex + 18, ey - 8), 6)
+            else:
+                pygame.draw.circle(surface, WHITE, (ex, ey), r * 0.24)
+                pygame.draw.circle(surface, (30, 20, 40), (ex, ey + r * 0.08), r * 0.11)
+            pygame.draw.line(surface, (30, 20, 40), (ex - s * r * 0.3, ey - r * 0.38), (ex + s * r * 0.1, ey - r * 0.25), 7)
+        # mouth with teeth
+        mouth = pygame.Rect(0, 0, r * 1.1, r * (0.5 if hurt else 0.35))
+        mouth.center = (int(x), int(y + r * 0.42))
+        pygame.draw.ellipse(surface, (60, 10, 20), mouth)
+        for i in range(5):
+            tx = mouth.left + (i + 0.5) * mouth.width / 5
+            pygame.draw.polygon(surface, WHITE, [(tx - 9, mouth.top + 4), (tx + 9, mouth.top + 4), (tx, mouth.top + 20)])
+        # health bar
+        bar = pygame.Rect(0, 0, int(self.w * 0.4), 22)
+        bar.midtop = (self.w // 2, self.hud_height + 8)
+        pygame.draw.rect(surface, (40, 30, 50), bar, border_radius=10)
+        fill = bar.copy()
+        fill.width = int(bar.width * frac)
+        pygame.draw.rect(surface, (230, 60, 80), fill, border_radius=10)
+        pygame.draw.rect(surface, WHITE, bar, 3, border_radius=10)
+        t = self._text(f"BOSS  {game.boss_hp}", self.small_font, WHITE)
+        surface.blit(t, t.get_rect(midleft=(bar.right + 12, bar.centery)))
+
+    def draw_sentence_bar(self, surface: pygame.Surface, game, now: float) -> None:
+        if not game.tokens and not game.sentence:
+            return
+        f = self.word_font
+        y = int(game.bar_y)
+        bg = pygame.Rect(int(self.w * 0.05), y - 44, int(self.w * 0.9), 88)
+        panel = pygame.Surface(bg.size, pygame.SRCALPHA)
+        panel.fill((12, 14, 30, 190))
+        surface.blit(panel, bg)
+        pygame.draw.rect(surface, (120, 130, 180), bg, 3, border_radius=14)
+        toks = game.tokens or re_words(game.sentence)
+        widths = [f.size(t)[0] + 30 for t in toks]
+        x = self.w / 2 - sum(widths) / 2
+        for i, (tok, wd) in enumerate(zip(toks, widths)):
+            cx = x + wd / 2
+            if i < game.placed or not game.tokens:
+                t = self._text(tok, f, GOLD)
+                surface.blit(t, t.get_rect(center=(cx, y)))
+            else:
+                nxt = i == game.placed
+                k = 0.5 + 0.5 * math.sin(now * 6) if nxt else 0
+                color = (255, 255, 255) if nxt else (110, 115, 140)
+                pygame.draw.line(surface, color, (x + 8, y + 26 - 4 * k), (x + wd - 8, y + 26 - 4 * k), 6)
+            x += wd
+        if game.sentence and game.sentence[-1] in ".?!" and (not game.tokens or game.placed == len(game.tokens)):
+            t = self._text(game.sentence[-1], f, GOLD)
+            surface.blit(t, t.get_rect(midleft=(x - 10, y)))
+        t = self._text(f"Sentence {min(game.done_count + 1, game.goal)} of {game.goal}", self.small_font, WHITE)
+        surface.blit(t, t.get_rect(midtop=(self.w // 2, bg.bottom + 4)))
+
+    def draw_listen(self, surface: pygame.Surface, game, now: float) -> None:
+        """Catch the word: a speaker that pulses when the word is said."""
+        cx, cy = self.w // 2, self.hud_height + 50
+        since = now - (game.next_announce - game.ANNOUNCE_EVERY)
+        pulse = max(0.0, 1 - since / 1.5)
+        pygame.draw.circle(surface, (40, 50, 90), (cx - 120, cy), 34)
+        pygame.draw.polygon(surface, WHITE, [(cx - 138, cy - 10), (cx - 126, cy - 10), (cx - 110, cy - 24),
+                                             (cx - 110, cy + 24), (cx - 126, cy + 10), (cx - 138, cy + 10)])
+        for i in range(3):
+            rr = 14 + i * 10 + pulse * 6
+            pygame.draw.arc(surface, (255, 255, 255), (cx - 110 - rr, cy - rr, rr * 2, rr * 2), -0.8, 0.8, 4)
+        t = self._text("Listen!  Find the word", self.hud_font, GOLD if pulse > 0 else WHITE)
+        surface.blit(t, t.get_rect(midleft=(cx - 70, cy)))
 
     POWER_COLORS = {"gold": (255, 190, 30), "freeze": (120, 210, 255), "giant": (190, 110, 255)}
 
@@ -366,3 +490,7 @@ class Renderer:
     def draw_say_hint(self, surface: pygame.Surface, text: str) -> None:
         t = self._text(text, self.small_font, (230, 230, 230))
         surface.blit(t, t.get_rect(midbottom=(self.w // 2, self.h - 6)))
+
+
+def re_words(sentence: str) -> list[str]:
+    return re.findall(r"[A-Za-z']+", sentence)
