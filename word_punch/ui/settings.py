@@ -94,6 +94,13 @@ class SettingsScreen:
                  [("auto", "auto")] + [(v, f"{v}  ({'brighter, slower' if v > -5 else 'darker, faster'})")
                                        for v in (-3, -4, -5, -6, -7)], "camera",
                  "auto can drop to ~15 fps in a dim room"),
+            Item("Pose model", "pose", "mediapipe_model",
+                 [(str(_models() / f"pose_landmarker_{m}.task"), label) for m, label in
+                  (("lite", "lite (fastest)"), ("full", "full (best here)"), ("heavy", "heavy (slow)"))],
+                 "camera", note="full was as fast as lite on this laptop and a bit more sure"),
+            Item("Smoothing", "pose", "smoothing",
+                 [("off", "off"), ("low", "low"), ("medium", "medium"), ("high", "high (steadiest)")],
+                 note="steadier skeletons, hats and hand rings (punches still use the raw pose)"),
             header("MICROPHONE"),
             Item("Microphone", "speech", "device", mics, "mic"),
             Item("Speech model", "speech", "model",

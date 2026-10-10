@@ -22,6 +22,7 @@ from .ui.settings import SettingsScreen
 from .ui.skeleton import SkeletonLayer
 from .ui.music import Music
 from .ui.sfx import Sfx
+from .vision.smoothing import PoseSmoother
 from .voice import Voice, spoken
 from .words import WordBank
 
@@ -118,6 +119,7 @@ class App:
         self.vision = self.speech = None
         self.view = CameraView(self.size, (cfg["camera"]["width"], cfg["camera"]["height"]), dim=0.35)
         self.pose_times: deque = deque(maxlen=60)
+        self.smoother = PoseSmoother(cfg["pose"].get("smoothing", "medium"))
         if not args.no_camera:
             self.start_vision()
         self.store = ProfileStore()
@@ -147,6 +149,7 @@ class App:
         self.tracker = Tracker(3)
         self.punchers = [PunchDetector(self.cfg["punch"]) for _ in range(3)]
         self.pose_times.clear()
+        self.smoother.set_preset(self.cfg["pose"].get("smoothing", "medium"))
 
     def start_speech(self) -> None:
         from .speech.service import SpeechService
@@ -165,6 +168,8 @@ class App:
         if section == "voice" and key == "volume":
             self.voice.set_volume(self.cfg["voice"]["volume"])
             self.speak("Great job!")
+        elif section == "pose" and key == "smoothing":
+            self.smoother.set_preset(self.cfg["pose"]["smoothing"])
         elif section == "game" and key == "music":
             self.music.set_volume(self.cfg["game"]["music"])
         elif section == "game" and key == "volume":
@@ -222,13 +227,15 @@ class App:
         """Each kid's chosen hat on their head in the camera picture."""
         if not self.vision:
             return
+        now = time.time()
         for s in self.tracker.slots:
-            if not s.person:
+            person = self.shown(s, now)
+            if not person:
                 continue
             if self.state == "playing":
                 idx = s.index
                 if self.game.mode == "split":
-                    x, _ = self.view.to_screen(s.person.center_x, 0.5)
+                    x, _ = self.view.to_screen(person.center_x, 0.5)
                     idx = self.game.lane_at(x).players[0]
                 prof = self._profile_of(idx)
             else:  # menus: kids stand left to right in the order they joined
@@ -236,7 +243,7 @@ class App:
                 prof = joined[s.index] if s.index < len(joined) else None
             if prof is None or prof.hat == "none":
                 continue
-            pose = rewards.head_pose(s.person, self.view.to_screen)
+            pose = rewards.head_pose(person, self.view.to_screen)
             if pose:
                 rewards.draw_hat(surf, prof.hat, *pose)
 
@@ -459,18 +466,26 @@ class App:
             if speed >= threshold:
                 self.game.slice(slot.index, x0, y0, x1, y1, now)
 
+    def shown(self, slot, now: float | None = None):
+        """The pose to draw for a player slot: smoothed and blended (None if nobody there)."""
+        if not slot.active:
+            return None
+        return self.smoother.at(slot.index, now if now is not None else time.time()) or slot.person
+
     def draw_skeletons(self, surf: pygame.Surface) -> None:
         if not (self.vision and self.cfg["game"].get("skeletons", True)):
             return
+        now = time.time()
         self.skeletons.begin()
         for s in self.tracker.slots:
-            if not s.person:
+            person = self.shown(s, now)
+            if not person:
                 continue
             idx = s.index
             if self.state == "playing" and self.game.mode == "split":
-                x, _ = self.view.to_screen(s.person.center_x, 0.5)
+                x, _ = self.view.to_screen(person.center_x, 0.5)
                 idx = self.game.lane_at(x).players[0]
-            self.skeletons.add(self.view, s.person, PLAYER_COLORS[idx % 3])
+            self.skeletons.add(self.view, person, PLAYER_COLORS[idx % 3])
         self.skeletons.end(surf)
 
     # ---- hooks for tools that extend the game (e.g. tools/punch_playground.py) -------
@@ -529,6 +544,11 @@ class App:
             self.pose_times.append(t)
             slots = self.tracker.update(people, t)
             for s in slots:
+                if s.person:
+                    self.smoother.update(s.index, s.person, t)
+                elif not s.active:
+                    self.smoother.drop(s.index)
+            for s in slots:
                 if playing and self.game.kind == "whack" and s.person:
                     for hand in ("left_wrist", "right_wrist"):
                         pt = self._hand_point(s.person, hand)
@@ -547,10 +567,11 @@ class App:
                     self.effects.sparkle(x, y, color, 16)
                     self.game.punch(s.index, x, now, y)
         for s in self.tracker.slots:
-            if not s.person:
+            person = self.shown(s, now)
+            if not person:
                 continue
             for hand in ("left_wrist", "right_wrist"):
-                kp = s.person.get(hand, 0.4)
+                kp = person.get(hand, 0.4)
                 if kp:
                     x, y = self.view.to_screen(kp.x, kp.y)
                     player = s.index

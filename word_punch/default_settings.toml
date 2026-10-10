@@ -14,7 +14,8 @@ fps = 30
 
 [pose]
 backend = "mediapipe"
-mediapipe_model = "models/pose_landmarker_lite.task"   # _full is more accurate, slower
+mediapipe_model = "models/pose_landmarker_full.task"   # lite / full / heavy (full: as fast as lite here)
+smoothing = "medium"     # off / low / medium / high - steadier skeletons, hats and hand rings
 max_people = 3
 input_width = 480    # frame is downscaled to this width before pose detection
 min_detection_confidence = 0.5

@@ -110,8 +110,9 @@ class Playground(App):
         if self.vision and self.show_skeleton:
             self.skeletons.begin()
             for s in self.tracker.slots:
-                if s.person:
-                    self.skeletons.add(self.view, s.person, PLAYER_COLORS[s.index % 3], alpha=220,
+                person = self.shown(s)
+                if person:
+                    self.skeletons.add(self.view, person, PLAYER_COLORS[s.index % 3], alpha=220,
                                        shoulder_line=True)
             self.skeletons.end(surf)
 
