@@ -90,27 +90,50 @@ class Renderer:
             for i in range(w.misses):  # gentle mode: how many times it fell
                 pygame.draw.circle(surface, (255, 120, 120), (rect.right - 10 - 14 * i, rect.top + 10), 5)
 
-    def draw_rockets(self, surface: pygame.Surface, game: Game) -> None:
+    def glove(self, color: tuple, height: int) -> pygame.Surface:
+        """A cartoon boxing glove pointing up, cached per color/size."""
+        key = ("glove", color, height)
+        if key in self._text_cache:
+            return self._text_cache[key]
+        k = 3  # draw big, then smooth-scale down for clean edges
+        H = height * k
+        W = int(H * 0.78)
+        surf = pygame.Surface((W, H), pygame.SRCALPHA)
+        dark = tuple(int(c * 0.55) for c in color)
+        light = tuple(min(255, int(c + (255 - c) * 0.55)) for c in color)
+        o = 4 * k  # outline width
+        fist = pygame.Rect(int(W * 0.12), 0, int(W * 0.84), int(H * 0.66))
+        thumb = pygame.Rect(0, int(H * 0.26), int(W * 0.36), int(H * 0.36))
+        cuff = pygame.Rect(int(W * 0.22), int(H * 0.6), int(W * 0.62), int(H * 0.38))
+        for shape, fill in ((cuff, (245, 245, 250)), (fist, color), (thumb, color)):
+            if shape is cuff:
+                pygame.draw.rect(surf, dark, shape, border_radius=10 * k)
+                pygame.draw.rect(surf, fill, shape.inflate(-2 * o, -2 * o), border_radius=8 * k)
+            else:
+                pygame.draw.ellipse(surf, dark, shape)
+                pygame.draw.ellipse(surf, fill, shape.inflate(-2 * o, -2 * o))
+        # thumb crease, cuff stripe, shine
+        pygame.draw.arc(surf, dark, thumb.inflate(-o, -o).move(int(W * 0.05), 0), 0.3, 2.2, 3 * k)
+        pygame.draw.line(surf, color, (cuff.left + o, cuff.top + cuff.height // 2),
+                         (cuff.right - o, cuff.top + cuff.height // 2), 5 * k)
+        shine = pygame.Rect(int(W * 0.3), int(H * 0.06), int(W * 0.28), int(H * 0.16))
+        pygame.draw.ellipse(surf, light, shine)
+        out = pygame.transform.smoothscale(surf, (W // k, H // k))
+        self._text_cache[key] = out
+        return out
+
+    def draw_rockets(self, surface: pygame.Surface, game: Game, now: float = 0.0) -> None:
         for r in game.rockets:
             color = PLAYER_COLORS[r.player % 3]
-            x, y, rad = int(r.x), int(r.y), int(r.radius)
-            # trail
-            for i in range(1, 6):
-                t = pygame.Surface((rad * 2, rad * 2), pygame.SRCALPHA)
-                pygame.draw.circle(t, (*color, 120 - i * 20), (rad, rad), max(2, rad - i * rad // 6))
-                surface.blit(t, (x - rad, y + i * rad // 2 - rad))
-            self._draw_fist(surface, x, y, rad, color)
-
-    def _draw_fist(self, surface, x, y, rad, color):
-        body = pygame.Rect(0, 0, int(rad * 1.6), int(rad * 1.5))
-        body.center = (x, y + rad // 4)
-        pygame.draw.rect(surface, color, body, border_radius=rad // 2)
-        pygame.draw.rect(surface, WHITE, body, 3, border_radius=rad // 2)
-        kr = max(3, rad // 4)
-        for i in range(4):  # knuckles on top
-            kx = body.left + kr + i * (body.width - 2 * kr) // 3
-            pygame.draw.circle(surface, color, (kx, body.top + kr // 2), kr)
-            pygame.draw.circle(surface, WHITE, (kx, body.top + kr // 2), kr, 2)
+            g = self.glove(color, int(r.radius * 3.4))
+            wobble = math.sin(now * 40 + r.x) * 2
+            rect = g.get_rect(center=(int(r.x + wobble), int(r.y)))
+            # speed lines
+            for dx, length in ((-0.55, 1.3), (0.55, 1.1), (0.0, 1.6)):
+                x = int(r.x + dx * rect.width)
+                pygame.draw.line(surface, (255, 255, 255), (x, rect.bottom),
+                                 (x, rect.bottom + int(r.radius * length)), 3)
+            surface.blit(g, rect)
 
     def draw_hands(self, surface: pygame.Surface, hands: list[tuple[int, int, int]], now: float) -> None:
         """hands: (player, x, y) in screen pixels."""

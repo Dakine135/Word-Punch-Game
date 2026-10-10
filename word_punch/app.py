@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import random
 import time
 from collections import deque
 
@@ -77,6 +78,7 @@ class App:
         self.effects = Effects()
         self.sfx = Sfx()
         self.debug = args.debug
+        self.show_typing = True  # the "say:" box when there's no mic
         self.paused = False
         self.typed = ""
         self.heard_log: deque = deque(maxlen=8)
@@ -122,6 +124,8 @@ class App:
             if e.type == pygame.QUIT:
                 return False
             if e.type == pygame.KEYDOWN:
+                if self.on_key(e, now):
+                    continue
                 if e.key == pygame.K_ESCAPE:
                     return False
                 if e.key == pygame.K_F11:
@@ -144,6 +148,18 @@ class App:
                 player = {1: 0, 3: 1, 2: 2}[e.button]
                 self.game.punch(player, e.pos[0], now, e.pos[1])
         return True
+
+    # ---- hooks for tools that extend the game (e.g. tools/punch_playground.py) -------
+
+    def on_key(self, e, now: float) -> bool:
+        """Return True if the key was handled."""
+        return False
+
+    def after_update(self, now: float) -> None:
+        pass
+
+    def draw_overlay(self, surf: pygame.Surface, now: float) -> None:
+        pass
 
     def say(self, word: str, now: float):
         self.heard_log.append(word)
@@ -170,6 +186,10 @@ class App:
             for s in slots:
                 for p in self.punchers[s.index].update(s.person, t):
                     x, y = self.view.to_screen(p.x, p.y)
+                    player = self.game.lane_at(x).players[0] if self.game.mode == "split" else s.index
+                    color = PLAYER_COLORS[player % 3]
+                    self.effects.ring(x, y, color, r0=20, r1=110, life=0.3, width=10)
+                    self.effects.sparkle(x, y, color, 16)
                     self.game.punch(s.index, x, now, y)
         for s in self.tracker.slots:
             if not s.person:
@@ -198,14 +218,27 @@ class App:
                 fx.sparkle(ev.x, ev.y, GOLD, 20)
             elif k == "launch":
                 self.sfx.play("launch")
+                color = PLAYER_COLORS[ev.player % 3]
+                fx.ring(ev.x, ev.y, color, r0=10, r1=90, life=0.35, width=8)
+                fx.burst(ev.x, ev.y, [(200, 200, 210), color], n=14, speed=260, size=7, life=0.4)
             elif k == "break":
                 self.sfx.play("break")
                 color = PLAYER_COLORS[ev.player % 3]
-                fx.burst(ev.x, ev.y, [color, GOLD, (255, 255, 255)], n=60)
-                fx.float_text(f"+{ev.points}", ev.x, ev.y, GOLD, r.pop_font, life=1.2, pop=True)
-                fx.shake = 8
+                w = ev.word
+                fx.ring(ev.x, ev.y, (255, 255, 255), r0=w.h * 0.4, r1=w.w * 0.85, life=0.3, width=10)
+                fx.ring(ev.x, ev.y, GOLD, r0=w.h * 0.2, r1=w.w * 0.8, life=0.5, width=8)
+                fx.debris(ev.x, ev.y, w.w, w.h, [GOLD, (255, 230, 120), (200, 150, 30)])
+                fx.burst(ev.x, ev.y, [color, GOLD, (255, 255, 255)], n=50)
+                # keep the text below the HUD strip so it's never hidden
+                ty = max(ev.y, r.hud_height + w.h * 0.6)
+                fx.float_text(random.choice(("POW!", "BAM!", "WHAM!", "BOOM!", "KAPOW!")),
+                              ev.x, ty, color, r.big_font, life=0.9, rise=30, pop=True)
+                fx.float_text(f"+{ev.points}", ev.x, ty + r.big_font.get_height() * 0.8, GOLD,
+                              r.pop_font, life=1.2, pop=True)
+                fx.shake = 10
             elif k == "clang":
                 self.sfx.play("clang")
+                fx.ring(ev.x, ev.y, (190, 200, 230), r0=8, r1=60, life=0.25, width=5)
                 fx.sparkle(ev.x, ev.y, (180, 190, 220))
                 fx.float_text("Read it first!", ev.x, ev.y + 40, (220, 230, 255), r.small_font, life=1.0)
             elif k == "miss":
@@ -241,16 +274,18 @@ class App:
         r = self.renderer
         r.draw_background(surf, self.game)
         r.draw_words(surf, self.game, now)
-        r.draw_rockets(surf, self.game)
-        r.draw_hands(surf, self.hands, now)
         self.effects.draw(surf)
+        r.draw_rockets(surf, self.game, now)
+        r.draw_hands(surf, self.hands, now)
         r.draw_lane_out(surf, self.game)
         r.draw_hud(surf, self.game)
+        self.effects.draw_texts(surf)
         if now - self.game_started < 12:
             r.draw_say_hint(surf, "Read the word out loud, then punch up under it!")
-        if self.args.no_mic:
+        if self.args.no_mic and self.show_typing:
             t = r.hud_font.render(f"say: {self.typed}_", True, (255, 255, 255))
             surf.blit(t, (14, self.size[1] - t.get_height() - 30))
+        self.draw_overlay(surf, now)
         if self.debug:
             self._draw_debug(surf)
         elif self.speech and self.speech.error:
@@ -310,7 +345,11 @@ class App:
                 self.poll_vision(now)
                 if not self.paused:
                     self.game.update(dt, now)
+                    for r in self.game.rockets:
+                        self.effects.trail(r.x, r.y + r.radius * 1.2, PLAYER_COLORS[r.player % 3],
+                                           size=r.radius * 0.5)
                     self.effects.update(dt)
+                self.after_update(now)
                 self.react(now)
                 self.draw(now)
                 self.clock.tick(self.cfg["game"]["fps"])

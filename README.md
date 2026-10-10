@@ -56,7 +56,10 @@ python -m word_punch --sim     # no camera/mic: type a word + Enter to "say" it,
 ## Testing tools
 
 ```bash
-python tools/pose_spike.py                      # skeletons + PUNCH! detection, for tuning
+python tools/punch_playground.py               # practice punching: skeletons, words auto-unlock,
+                                                # live punch meters + tuning keys (S saves)
+python tools/punch_playground.py --no-camera    # animation test: click to punch
+python tools/pose_spike.py                      # bare skeletons + PUNCH! detection
 python tools/speech_spike.py --levels k2 k3     # flashcards: measures recognition on the kids' voices
                                                 # Tab / Shift+Tab picks the mic (saved for the game too),
                                                 # and the level bar shows whether the mic hears anything.
