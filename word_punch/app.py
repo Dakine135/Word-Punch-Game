@@ -152,11 +152,11 @@ class App:
     def poll_speech(self, now: float):
         if not self.speech:
             return
-        from .speech.service import Heard
+        from .speech.service import Heard, Voice
         for ev in self.speech.poll():
             if isinstance(ev, Heard):
                 self.say(ev.word, now)
-            else:
+            elif isinstance(ev, Voice):
                 self.heard_log.append("?")
                 self.game.voice(now)
 

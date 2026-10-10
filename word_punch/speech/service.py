@@ -29,6 +29,18 @@ class Voice:
     t: float
 
 
+@dataclass
+class Transcript:
+    """Unrestricted transcription (any English words), for testing/debugging only.
+
+    final=False: a live partial guess that may still change.
+    words: [(word, confidence 0..1)] on final results.
+    """
+    text: str
+    final: bool
+    words: list
+
+
 def list_input_devices() -> list[tuple[int, str]]:
     """Input devices on the default host API (MME on Windows), so each mic is listed once."""
     import sounddevice as sd
@@ -76,6 +88,13 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
         return r
 
     rec = make_recognizer(vocab)
+    # Optional second recognizer with the full vocabulary, so a tester can see what was
+    # actually heard when the game's restricted recognizer gets it wrong. Costs extra CPU.
+    free = None
+    if cfg.get("transcript"):
+        free = vosk.KaldiRecognizer(model, rate)
+        free.SetWords(True)
+    last_partial = ""
     audio_q: queue.Queue = queue.Queue()
     muted_until = 0.0
     sent: list[str] = []  # words of the current utterance already sent, by position
@@ -134,6 +153,19 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                 sent.clear()
                 continue
 
+            if free is not None:
+                if free.AcceptWaveform(data):
+                    r = json.loads(free.Result())
+                    if r.get("text"):
+                        words = [(w["word"], round(w.get("conf", 1.0), 2)) for w in r.get("result", [])]
+                        out_q.put(("transcript", (r["text"], True, words)))
+                    last_partial = ""
+                else:
+                    partial = json.loads(free.PartialResult()).get("partial", "")
+                    if partial != last_partial:
+                        last_partial = partial
+                        out_q.put(("transcript", (partial, False, [])))
+
             if rec.AcceptWaveform(data):
                 result = json.loads(rec.Result())
                 words = [w["word"] if w.get("conf", 1.0) >= cfg["min_confidence"] else "[unk]"
@@ -145,8 +177,8 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
 
 
 class SpeechService:
-    def __init__(self, cfg: dict):
-        self.cfg = cfg
+    def __init__(self, cfg: dict, transcript: bool = False):
+        self.cfg = dict(cfg, transcript=transcript)
         ctx = mp.get_context("spawn")
         self._cmd_q = ctx.Queue()
         self._out_q = ctx.Queue()
@@ -171,7 +203,7 @@ class SpeechService:
     def mute(self, seconds: float) -> None:
         self._cmd_q.put(("mute", seconds))
 
-    def poll(self) -> list[Heard | Voice]:
+    def poll(self) -> list[Heard | Voice | Transcript]:
         events = []
         while True:
             try:
@@ -191,6 +223,8 @@ class SpeechService:
                 events.append(Heard(*arg))
             elif kind == "voice":
                 events.append(Voice(arg))
+            elif kind == "transcript":
+                events.append(Transcript(*arg))
         return events
 
     def stop(self, wait: bool = True) -> None:

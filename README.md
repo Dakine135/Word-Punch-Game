@@ -59,7 +59,10 @@ python -m word_punch --sim     # no camera/mic: type a word + Enter to "say" it,
 python tools/pose_spike.py                      # skeletons + PUNCH! detection, for tuning
 python tools/speech_spike.py --levels k2 k3     # flashcards: measures recognition on the kids' voices
                                                 # Tab / Shift+Tab picks the mic (saved for the game too),
-                                                # and the level bar shows whether the mic hears anything
+                                                # and the level bar shows whether the mic hears anything.
+                                                # Shows what you actually said (free transcript with
+                                                # confidence) next to what the game heard; type any
+                                                # word + Enter to test it.
 python -m pytest
 ```
 
