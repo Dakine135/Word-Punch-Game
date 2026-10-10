@@ -1,0 +1,38 @@
+# Defaults. Override any of these in settings.toml at the project root
+# (same structure; only include what you change).
+
+[camera]
+index = 0            # which webcam
+width = 640
+height = 480
+fps = 30
+
+[pose]
+backend = "mediapipe"
+mediapipe_model = "models/pose_landmarker_lite.task"   # _full is more accurate, slower
+max_people = 3
+input_width = 480    # frame is downscaled to this width before pose detection
+min_detection_confidence = 0.5
+min_presence_confidence = 0.5
+min_tracking_confidence = 0.5
+
+[punch]
+window_s = 0.35          # look back this far for the punch motion
+min_rise = 0.9           # wrist must rise this many shoulder-widths within the window
+min_speed = 3.5          # ...at this many shoulder-widths per second
+above_shoulder = true    # and end above shoulder height
+cooldown_s = 0.4
+min_visibility = 0.4
+
+[speech]
+model = "models/vosk-model-small-en-us-0.15"
+device = ""              # mic name substring; "" = system default
+sample_rate = 16000
+use_partials = true      # react to words before the kid stops talking (faster, a bit less sure)
+min_confidence = 0.0     # drop final words below this confidence (0..1)
+
+[game]
+width = 1280
+height = 720
+fullscreen = false
+fps = 60

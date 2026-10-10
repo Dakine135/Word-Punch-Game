@@ -1,0 +1,7 @@
+pygame-ce>=2.5
+opencv-python>=4.9
+mediapipe>=0.10.14
+vosk>=0.3.45
+sounddevice>=0.4.6
+numpy>=1.26
+pytest>=8

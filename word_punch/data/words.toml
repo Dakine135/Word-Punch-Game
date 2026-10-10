@@ -1,0 +1,139 @@
+# Word lists from the kids' school sheets ("Heart Words").
+# Levels are played in `order`. `points` is the base score for breaking a word at that level.
+# Letters are generated in code (A-Z, a-z); their spoken aliases live in [letters] below.
+
+order = ["letters", "k1", "k2", "k3", "k4", "g1q1", "g1q2", "g1q3", "g1q4"]
+
+# Words that sound the same. Hearing any member counts for every member,
+# and the spawner never puts two members of a group on screen at once.
+homophones = [
+  ["to", "two", "too"],
+  ["one", "won"],
+  ["there", "their", "they're"],
+  ["right", "write"],
+  ["no", "know"],
+  ["for", "four"],
+  ["our", "hour"],
+  ["by", "buy", "bye"],
+  ["son", "sun"],
+  ["here", "hear"],
+  ["where", "wear"],
+  ["i", "eye"],
+  ["be", "bee"],
+  ["so", "sew"],
+  ["would", "wood"],
+  ["read", "red", "reed"],
+  ["some", "sum"],
+  ["through", "threw"],
+  ["were", "we're"],
+]
+
+
+[levels.letters]
+name = "Letters"
+points = 5
+words = []  # filled with A-Z and a-z at load time
+
+[levels.k1]
+name = "K - Q1"
+points = 10
+words = ["a", "I", "the", "is"]
+
+[levels.k2]
+name = "K - Q2"
+points = 15
+words = ["to", "he", "me", "we", "be", "my", "you", "she", "was", "said", "are", "have"]
+
+[levels.k3]
+name = "K - Q3"
+points = 20
+words = ["of", "do", "go", "so", "no", "and", "for", "one", "two", "what", "all", "your",
+         "from", "they", "some", "here"]
+
+[levels.k4]
+name = "K - Q4"
+points = 25
+words = ["where", "who", "there", "were", "does", "give", "love", "once", "come", "been",
+         "because", "many", "any"]
+
+[levels.g1q1]
+name = "1st - Q1"
+points = 30
+words = ["by", "or", "says", "goes", "want", "look", "book", "good"]
+
+[levels.g1q2]
+name = "1st - Q2"
+points = 35
+words = ["would", "could", "should", "their", "live", "move", "don't", "called", "friend",
+         "people", "other", "use", "only", "own", "read", "every", "kind", "water"]
+
+[levels.g1q3]
+name = "1st - Q3"
+points = 40
+words = ["another", "mother", "father", "brother", "sister", "woman", "women", "pretty",
+         "nothing", "very", "today", "after", "our", "over", "too", "won", "son"]
+
+[levels.g1q4]
+name = "1st - Q4"
+points = 45
+words = ["about", "sure", "laugh", "through", "great", "right", "these", "three", "first",
+         "above", "write", "why", "enough", "together", "far", "full", "against"]
+
+# Letter aliases, keyed by lowercase letter.
+# `name` = saying the letter's name; `sound` = words a recognizer is likely to hear
+# when a kid says the letter's sound ("buh" -> "but"). Both are accepted (forgiving).
+[letters.name]
+a = ["a", "ay", "eh", "hey"]
+b = ["b", "bee", "be"]
+c = ["c", "see", "sea"]
+d = ["d", "dee"]
+e = ["e", "ee"]
+f = ["f", "ef"]
+g = ["g", "gee"]
+h = ["h", "age", "each"]
+i = ["i", "eye", "aye"]
+j = ["j", "jay"]
+k = ["k", "kay", "okay"]
+l = ["l", "el", "elle", "ell"]
+m = ["m", "em"]
+n = ["n", "en"]
+o = ["o", "oh", "owe"]
+p = ["p", "pee", "pea"]
+q = ["q", "queue", "cue"]
+r = ["r", "are", "our"]
+s = ["s", "es", "ess"]
+t = ["t", "tea", "tee"]
+u = ["u", "you", "ewe"]
+v = ["v", "vee"]
+w = ["w", "double"]
+x = ["x", "ex", "eggs"]
+y = ["y", "why", "wye"]
+z = ["z", "zee", "zed"]
+
+[letters.sound]
+a = ["ah", "at", "add", "an", "apple"]
+b = ["but", "bud", "bus", "bat", "ball", "buh"]
+c = ["cut", "cup", "cat", "come"]
+d = ["duh", "dug", "dog", "dad", "done"]
+e = ["egg", "edge", "end", "ed"]
+f = ["fun", "fan", "fish", "if", "off"]
+g = ["gun", "go", "got", "gum", "good"]
+h = ["huh", "hut", "hat", "hug", "ha"]
+i = ["it", "in", "is", "if", "ick"]
+j = ["jump", "jug", "jam", "just"]
+k = ["cut", "kick", "kid", "cat"]
+l = ["la", "lap", "love", "lull"]
+m = ["mom", "mud", "ma", "hmm", "um"]
+n = ["nut", "no", "nap", "in"]
+o = ["on", "odd", "ox", "hot", "ah"]
+p = ["pup", "pop", "pot", "put"]
+q = ["quack", "quick", "queen"]
+r = ["run", "rug", "red", "er"]
+s = ["sun", "sit", "us", "yes"]
+t = ["top", "tub", "ten", "tip"]
+u = ["uh", "up", "us", "under"]
+v = ["van", "vet", "vest", "very"]
+w = ["wet", "web", "we", "what"]
+x = ["box", "fox", "six", "kiss"]
+y = ["yes", "yet", "yum", "yeah"]
+z = ["zoo", "zip", "buzz"]
