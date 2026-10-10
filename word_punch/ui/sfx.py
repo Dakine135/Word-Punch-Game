@@ -75,6 +75,11 @@ class Sfx:
         except pygame.error as e:
             print(f"sound disabled: {e}")
 
+    def set_volume(self, percent: int) -> None:
+        if self.ok:
+            for snd in self.sounds.values():
+                snd.set_volume(max(0, min(100, percent)) / 100)
+
     def play(self, name: str) -> None:
         if self.ok and name in self.sounds:
             self.sounds[name].play()

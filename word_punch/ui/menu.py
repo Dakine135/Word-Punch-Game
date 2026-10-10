@@ -32,6 +32,7 @@ class Button:
     hover: float = 0.0          # seconds a hand has been on it
     latched: bool = False       # just fired; wait until pointers leave
     data: object = None
+    mouse_only: bool = False    # grown-up buttons: a click, never a hand hover or punch
 
 
 @dataclass
@@ -49,6 +50,10 @@ def update_buttons(buttons: list[Button], ptr: Pointers, dt: float) -> Button | 
     for b in buttons:
         if not b.enabled:
             b.hover = 0
+            continue
+        if b.mouse_only:
+            if any(b.rect.collidepoint(p) for p in ptr.clicks):
+                fired = b
             continue
         inside = [p for p in ptr.hands if b.rect.collidepoint(p)]
         if ptr.mouse and b.rect.collidepoint(ptr.mouse):
@@ -168,6 +173,10 @@ class Menu:
         buttons.append(Button("next", go, "Let's go!" if n else "Pick your name",
                               f"{n} player{'s' if n != 1 else ''}" if n else "hold your hand on it",
                               (60, 160, 90), enabled=n > 0))
+        buttons.append(Button("settings", pygame.Rect(self.w - 150, self.h - 70, 136, 52), "Settings", "",
+                              (70, 75, 100), mouse_only=True))
+        buttons.append(Button("setup", pygame.Rect(14, self.h - 70, 136, 52), "Players", "",
+                              (70, 75, 100), mouse_only=True))
         return buttons
 
     def _mode_buttons(self) -> list[Button]:
@@ -202,9 +211,14 @@ class Menu:
                 return {"profiles": list(self.joined), "mode": self.mode, "gentle": self.gentle}
             return None
 
+        if self.screen == "settings":
+            return None  # the App drives the settings screen
         for e in keys:
             if e.key == pygame.K_p and self.screen == "who":
                 self.screen = "setup"
+                return None
+            if e.key == pygame.K_s and self.screen == "who":
+                self.screen = "settings"
                 return None
             if e.key == pygame.K_BACKSPACE and self.screen == "mode":
                 self.screen = "who"
@@ -233,6 +247,10 @@ class Menu:
             self.gentle = not self.gentle
         elif fired.key == "back":
             self.screen = "who"
+        elif fired.key == "settings":
+            self.screen = "settings"
+        elif fired.key == "setup":
+            self.screen = "setup"
         return None
 
     def _carry_hover(self, buttons: list[Button]) -> None:
@@ -262,7 +280,7 @@ class Menu:
             self._who_buttons() if self.screen == "who" else self._mode_buttons())
         if self.screen == "who":
             title(surface, r, "Who's playing?", 90)
-            hint(surface, r, "Hold your hand on your name (or punch it!)      P = parent setup")
+            hint(surface, r, "Hold your hand on your name (or punch it!)      P = players   S = settings")
         else:
             title(surface, r, "How do you want to play?", 100)
             hint(surface, r, "Hold your hand on a button      Backspace = back")

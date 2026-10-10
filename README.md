@@ -69,6 +69,12 @@ python tools/speech_spike.py --levels k2 k3     # flashcards: measures recogniti
 python -m pytest
 ```
 
+## Settings
+
+On the start screen press **S** (or click **Settings** in the corner) for camera, mic, game,
+punch, sound and display options. Changes save to `settings.toml` and camera/mic changes apply
+live. **P** (or **Players**) opens parent setup for the kids' profiles.
+
 ## Tuning
 
 Copy any section of `word_punch/default_settings.toml` into a `settings.toml` at the project root and change the values. Useful settings:

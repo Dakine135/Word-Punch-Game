@@ -41,6 +41,8 @@ width = 1280
 height = 720
 fullscreen = false
 fps = 60
+volume = 100         # sound effects, 0-100
+debug = false        # show fps / camera / mic info (F3 toggles)
 
 [rules]
 lives = 3                # per lane in split mode, shared in co-op / competitive

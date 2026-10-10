@@ -42,11 +42,18 @@ class Renderer:
         return tw + 2 * pad_x, th + 2 * pad_y
 
     def _text(self, text, f, color):
+        """Text with a dark outline so it reads well over the camera picture."""
         key = (text, id(f), color)
         if key not in self._text_cache:
             if len(self._text_cache) > 400:
                 self._text_cache.clear()
-            self._text_cache[key] = f.render(text, True, color)
+            fg = f.render(text, True, color)
+            bg = f.render(text, True, (0, 0, 0))
+            out = pygame.Surface((fg.get_width() + 4, fg.get_height() + 4), pygame.SRCALPHA)
+            for dx, dy in ((0, 2), (4, 2), (2, 0), (2, 4), (3, 3)):
+                out.blit(bg, (dx, dy))
+            out.blit(fg, (2, 2))
+            self._text_cache[key] = out
         return self._text_cache[key]
 
     # ---- drawing -------------------------------------------------------------------
@@ -151,7 +158,7 @@ class Renderer:
         pad = 14
         # Words emerge from behind this strip.
         strip = pygame.Surface((self.w, self.hud_height), pygame.SRCALPHA)
-        strip.fill((12, 14, 30, 215))
+        strip.fill((12, 14, 30, 105))  # see-through: kids can see their heads and fists
         surface.blit(strip, (0, 0))
         pygame.draw.line(surface, (90, 100, 150), (0, self.hud_height), (self.w, self.hud_height), 2)
         if game.mode == "split":

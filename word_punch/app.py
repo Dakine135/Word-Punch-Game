@@ -17,6 +17,7 @@ from .ui.effects import Effects
 from .ui.menu import Button, Menu, Pointers, draw_button, update_buttons
 from .ui.mic_meter import draw_mic_meter
 from .ui.render import GOLD, PLAYER_COLORS, Renderer
+from .ui.settings import SettingsScreen
 from .ui.sfx import Sfx
 from .words import WordBank
 
@@ -84,7 +85,10 @@ class App:
         self.renderer = Renderer(self.size)
         self.effects = Effects()
         self.sfx = Sfx()
-        self.debug = args.debug
+        self.sfx.set_volume(cfg["game"].get("volume", 100))
+        self.debug = args.debug or cfg["game"].get("debug", False)
+        self.pending_restart: dict[str, float] = {}
+        self.settings_screen: SettingsScreen | None = None
         self.show_typing = True  # the "say:" box when there's no mic
         self.paused = False
         self.typed = ""
@@ -93,15 +97,9 @@ class App:
 
         self.vision = self.speech = None
         self.view = CameraView(self.size, (cfg["camera"]["width"], cfg["camera"]["height"]), dim=0.35)
+        self.pose_times: deque = deque(maxlen=60)
         if not args.no_camera:
-            from .vision.punch import PunchDetector
-            from .vision.service import VisionService
-            from .vision.tracker import Tracker
-            self.vision = VisionService(cfg)
-            self.vision.start()
-            self.tracker = Tracker(3)
-            self.punchers = [PunchDetector(cfg["punch"]) for _ in range(3)]
-            self.pose_times: deque = deque(maxlen=60)
+            self.start_vision()
         self.store = ProfileStore()
         self.player_profiles: list[Profile | None] = [None] * len(args.names)
         self.frame_punches: list[tuple[int, int]] = []
@@ -113,10 +111,55 @@ class App:
         self.new_game()
         self._update_cursor()
         if not args.no_mic:
-            from .speech.service import SpeechService
-            self.speech = SpeechService(cfg["speech"])
-            self.speech.start(self.game.vocab())
-            self._vocab = self.game.vocab()
+            self.start_speech()
+
+    # ---- devices (restartable from the settings screen) ------------------------------
+
+    def start_vision(self) -> None:
+        from .vision.punch import PunchDetector
+        from .vision.service import VisionService
+        from .vision.tracker import Tracker
+        cam = self.cfg["camera"]
+        self.vision = VisionService(self.cfg)
+        self.vision.start()
+        self.view = CameraView(self.size, (cam["width"], cam["height"]), dim=0.35)
+        self.tracker = Tracker(3)
+        self.punchers = [PunchDetector(self.cfg["punch"]) for _ in range(3)]
+        self.pose_times.clear()
+
+    def start_speech(self) -> None:
+        from .speech.service import SpeechService
+        self.speech = SpeechService(self.cfg["speech"])
+        self._vocab = self.game.vocab()
+        self.speech.start(self._vocab)
+
+    def pose_fps(self) -> float:
+        now = time.time()
+        return sum(1 for t in self.pose_times if now - t < 1)
+
+    def on_setting_changed(self, section: str, key: str, restart: str) -> None:
+        """Called by the settings screen after it changed (and saved) a value."""
+        if restart:
+            self.pending_restart[restart] = time.time() + 0.8  # wait for the parent to stop clicking
+        if section == "game" and key == "volume":
+            self.sfx.set_volume(self.cfg["game"]["volume"])
+            self.sfx.play("unlock")
+        elif section == "game" and key == "debug":
+            self.debug = self.cfg["game"]["debug"]
+
+    def apply_restarts(self, now: float) -> None:
+        for what, at in list(self.pending_restart.items()):
+            if now < at:
+                continue
+            del self.pending_restart[what]
+            if what == "camera" and not self.args.no_camera:
+                if self.vision:
+                    self.vision.stop()
+                self.start_vision()
+            elif what == "mic" and not self.args.no_mic:
+                if self.speech:
+                    self.speech.stop(wait=False)
+                self.start_speech()
 
     def new_game(self):
         self.game = Game(mode=self.args.mode, player_names=self.args.names,
@@ -180,6 +223,20 @@ class App:
                 continue
             if e.type == pygame.KEYDOWN and e.key == pygame.K_F3:
                 self.debug = not self.debug
+                continue
+            if self.state == "menu" and self.menu.screen == "settings":
+                if self.settings_screen is None:
+                    self.settings_screen = SettingsScreen(self)
+                done = False
+                if e.type == pygame.KEYDOWN:
+                    done = self.settings_screen.handle_key(e)
+                elif e.type == pygame.MOUSEBUTTONDOWN and e.button in (1, 3):
+                    done = self.settings_screen.handle_click(e.pos, e.button)
+                elif e.type == pygame.MOUSEWHEEL:
+                    self.settings_screen.handle_wheel(e.y)
+                if done:
+                    self.menu.screen = "who"
+                    self.settings_screen = None
                 continue
             if self.state == "menu":
                 if e.type == pygame.KEYDOWN:
@@ -354,6 +411,13 @@ class App:
         else:
             self.view.draw(surf, frame)
         r = self.renderer
+        if self.state == "menu" and self.menu.screen == "settings":
+            if self.settings_screen is None:
+                self.settings_screen = SettingsScreen(self)
+            self.settings_screen.draw(surf, now)
+            r.draw_hands(surf, self.hands, now)
+            pygame.display.flip()
+            return
         if self.state == "menu":
             self.menu.draw(surf, now)
             r.draw_hands(surf, self.hands, now)
@@ -429,8 +493,7 @@ class App:
     def _draw_debug(self, surf):
         lines = [f"fps {self.clock.get_fps():.0f}"]
         if self.vision:
-            now = time.time()
-            pf = sum(1 for t in self.pose_times if now - t < 1)
+            pf = self.pose_fps()
             lines.append(f"camera: {self.vision.camera_name}")
             lines.append(f"pose {pf} fps, {self.vision.pose_ms:.0f} ms" +
                          (f"  ERROR {self.vision.error}" if self.vision.error else ""))
@@ -463,6 +526,7 @@ class App:
                 last = now
                 if not self.handle_events(now):
                     break
+                self.apply_restarts(now)
                 self.poll_speech(now)
                 self.poll_vision(now)
                 if self.state == "menu":
