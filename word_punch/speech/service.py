@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import math
 import multiprocessing as mp
+
+import numpy as np
 import queue
 import time
 from dataclasses import dataclass
@@ -74,7 +76,73 @@ def level_of(pcm: bytes) -> float:
     return min(1.0, max(0.0, (db + 60) / 60))
 
 
+def _gpu_speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, stop) -> None:
+    """Whisper / Parakeet on the GPU: transcribe each utterance, report its words."""
+    import sounddevice as sd
+
+    from .utterance import UtteranceListener, make_engine
+
+    rate = 16000
+    try:
+        engine = make_engine(cfg)
+    except Exception as e:
+        out_q.put(("error", f"speech model: {e}"))
+        return
+    listener = UtteranceListener(engine, cfg, rate)
+    listener.hint = sorted(vocab)[:30]
+    listener.vocab = sorted(vocab)
+    audio_q: queue.Queue = queue.Queue()
+    muted_until = 0.0
+    has_hint = False
+
+    def on_audio(indata, frames, time_info, status):
+        audio_q.put(bytes(indata))
+
+    try:
+        device = find_input_device(cfg["device"])
+        stream = sd.RawInputStream(samplerate=rate, blocksize=rate // 20, dtype="int16",
+                                   channels=1, device=device, callback=on_audio)
+        info = sd.query_devices(device if device is not None else sd.default.device[0])
+    except Exception as e:
+        out_q.put(("error", f"mic: {e}"))
+        return
+    out_q.put(("device", info["name"].strip()))
+    with stream:
+        out_q.put(("ready", None))
+        while not stop.is_set():
+            while True:
+                try:
+                    cmd, arg = cmd_q.get_nowait()
+                except queue.Empty:
+                    break
+                if cmd == "hint":  # the words on screen (display spelling)
+                    listener.hint, has_hint = list(arg)[:30], True
+                elif cmd == "vocab":
+                    listener.vocab = list(arg)
+                    if not has_hint:  # fallback hint (e.g. the speech test tool)
+                        listener.hint = list(arg)[:30]
+                elif cmd == "mute":
+                    muted_until = time.time() + arg
+                    listener.reset()
+            try:
+                data = audio_q.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            level = level_of(data)
+            out_q.put(("level", level))
+            now = time.time()
+            if now < muted_until:
+                continue
+            for ev in listener.feed(data, level, now):
+                if ev[0] == "voice" and cfg.get("save_misses") and listener.last_audio is not None:
+                    pcm = (np.clip(listener.last_audio, -1, 1) * 32767).astype(np.int16).tobytes()
+                    _save_miss(pcm, rate, listener.hint)
+                out_q.put(ev)
+
+
 def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, stop) -> None:
+    if cfg.get("engine", "vosk") in ("whisper", "parakeet", "choice"):
+        return _gpu_speech_main(cfg, vocab, cmd_q, out_q, stop)
     import sounddevice as sd
     import vosk
 
@@ -88,6 +156,16 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
         return r
 
     rec = make_recognizer(vocab)
+    # Second opinion: when Vosk hears a voice but can't place the word (the kids' problem),
+    # ask Whisper on the GPU "which on-screen word was that?" (whisper_choice.py).
+    chooser = None
+    if cfg.get("second_opinion", True):
+        try:
+            from .whisper_choice import WhisperChooser, cuda_dlls
+            cuda_dlls()
+            chooser = WhisperChooser(cfg.get("choice_model", "openai/whisper-large-v3-turbo"))
+        except Exception as e:  # keep listening with Vosk alone
+            out_q.put(("error", f"second opinion off: {e}"))
     # Optional second recognizer with the full vocabulary, so a tester can see what was
     # actually heard when the game's restricted recognizer gets it wrong. Costs extra CPU.
     free = None
@@ -180,7 +258,7 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                         out_q.put(("transcript", (partial, False, [])))
 
             loudest = max(loudest, level)
-            if cfg.get("save_misses"):
+            if cfg.get("save_misses") or chooser is not None:
                 if in_utterance or level >= cfg.get("voice_level", 0.45):
                     if not utter:
                         utter.extend(pre_roll)
@@ -193,10 +271,21 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                          for w in result.get("result", [])]
                 send(words, now, True)
                 if not words and not sent and loudest >= cfg.get("voice_level", 0.45):
-                    # A clear sound the recognizer couldn't place (e.g. a very short "a").
-                    out_q.put(("voice", now))
-                    if cfg.get("save_misses") and utter:
-                        _save_miss(b"".join(utter), rate, current_vocab)
+                    # A clear sound Vosk couldn't place: ask Whisper before giving up.
+                    picked = None
+                    if chooser is not None and utter:
+                        audio = np.frombuffer(b"".join(utter), np.int16).astype(np.float32) / 32768
+                        try:
+                            picked, info = chooser.choose(audio, current_vocab, cfg.get("choice_floor", -2.0))
+                        except Exception as e:
+                            out_q.put(("error", f"second opinion: {e}"))
+                    if picked:
+                        out_q.put(("heard", (picked, now, True)))
+                        out_q.put(("transcript", (f"(whisper) {picked}", True, [(picked, 1.0)])))
+                    else:
+                        out_q.put(("voice", now))
+                        if cfg.get("save_misses") and utter:
+                            _save_miss(b"".join(utter), rate, current_vocab)
                 utter = []
                 sent.clear()
                 in_utterance, loudest = False, 0.0
@@ -245,6 +334,10 @@ class SpeechService:
 
     def set_vocab(self, vocab) -> None:
         self._cmd_q.put(("vocab", sorted(vocab)))
+
+    def set_hint(self, words) -> None:
+        """Words on screen right now (GPU models use them as a spelling hint)."""
+        self._cmd_q.put(("hint", list(words)))
 
     def mute(self, seconds: float) -> None:
         self._cmd_q.put(("mute", seconds))

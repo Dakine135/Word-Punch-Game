@@ -84,3 +84,23 @@ def test_tracker_new_person_takes_free_slot():
     tr.update([person(0.5)], 0.0)
     slots = tr.update([person(0.5), person(0.1)], 0.1)
     assert slots[0].x == 0.5 and slots[1].x == 0.1
+
+
+def with_id(p, tid):
+    p.track_id = tid
+    return p
+
+
+def test_tracker_follows_ids_when_kids_cross():
+    tr = Tracker(max_players=2)
+    tr.update([with_id(person(0.3), 7), with_id(person(0.7), 9)], 0.0)
+    slots = tr.update([with_id(person(0.72), 7), with_id(person(0.28), 9)], 0.5)  # swapped sides
+    assert slots[0].track_id == 7 and abs(slots[0].x - 0.72) < 1e-6
+    assert slots[1].track_id == 9 and abs(slots[1].x - 0.28) < 1e-6
+
+
+def test_tracker_new_id_reuses_a_free_slot():
+    tr = Tracker(max_players=2, keep_s=1.0)
+    tr.update([with_id(person(0.3), 1), with_id(person(0.7), 2)], 0.0)
+    slots = tr.update([with_id(person(0.3), 1), with_id(person(0.69), 5)], 2.0)  # id 2 lost, 5 appears
+    assert slots[1].track_id == 5 and slots[0].track_id == 1

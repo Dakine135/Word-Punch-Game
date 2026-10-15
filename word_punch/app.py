@@ -316,6 +316,10 @@ class App:
         if vocab != getattr(self, "_vocab", None):
             self._vocab = vocab
             self.speech.set_vocab(vocab)
+        hint = sorted({w.text for w in self.game.words if not w.unlocked})
+        if hint and hint != getattr(self, "_hint", None):
+            self._hint = hint
+            self.speech.set_hint(hint)
 
     # ---- input ---------------------------------------------------------------------
 

@@ -95,7 +95,7 @@ def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop) -> None:
                 continue
             last_t = t
             small = frame
-            if pose_w and pose_w < w:
+            if pose_cfg["backend"] != "yolo" and pose_w and pose_w < w:  # YOLO resizes itself
                 small = cv2.resize(frame, (pose_w, int(h * pose_w / w)), interpolation=cv2.INTER_AREA)
             start = time.time()
             people = backend.detect(small, int((t - t0) * 1000))

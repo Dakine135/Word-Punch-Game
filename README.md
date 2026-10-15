@@ -29,15 +29,29 @@ A reading game: sight words (or letters) fall from the sky over a mirrored camer
 - **Voice**: missed words are read aloud (offline Piper voice)
 - **Parent report**: Players screen (P) -> G opens a printable progress page per kid
 
-## Setup (Windows laptop)
+## Setup (Windows laptop with an NVIDIA GPU)
 
 ```bash
 py -3.11 -m venv %USERPROFILE%\.venvs\word-punch
+%USERPROFILE%\.venvs\word-punch\Scripts\pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 %USERPROFILE%\.venvs\word-punch\Scripts\pip install -r requirements.txt
 %USERPROFILE%\.venvs\word-punch\Scripts\python tools/fetch_models.py
 ```
 
-(The venv lives outside OneDrive on purpose.)
+(The venv lives outside OneDrive on purpose. Whisper downloads itself on first run.)
+
+### Models (all offline, on this laptop)
+
+| Job | Model | Why |
+|---|---|---|
+| Pose | **YOLO11x-pose** (Ultralytics, GPU) | steady (1.3 px/frame wobble vs 9.7 for MediaPipe), finds the player every frame, tracks each kid by ID |
+| Speech | **Vosk en-us-0.22** listening for the on-screen words | fast: reacts while the kid is still talking |
+| Speech, 2nd opinion | **Whisper large-v3-turbo** (GPU) picks the on-screen word | runs when Vosk hears a voice but can't place the word - the kids' main problem |
+| Voice | **Piper** en_US-lessac-medium | reads words aloud |
+
+Free-transcription Whisper and Parakeet were tested too, but they're poor at lone short
+words ("a", "I", "the" came out as "Okay.", "Bye."), so Whisper is used to *choose* among
+the on-screen words instead.
 
 Desktop shortcut (double-click to play, fullscreen, no console window):
 
@@ -117,8 +131,9 @@ Copy any section of `word_punch/default_settings.toml` into a `settings.toml` at
 
 | Hardware | Details |
 |---|---|
-| Laptop (development) | Any webcam and mic |
-| Raspberry Pi 4 (target) | USB webcam and a USB conference mic. The camera, pose and speech work runs in separate processes. A lighter MoveNet pose backend is planned for the Pi. |
+| Laptop with an NVIDIA GPU | Runs everything (pose + speech models on the GPU). Built-in or USB webcam, any mic. |
+
+(A Raspberry Pi was the original plan; it was dropped so the game can use the laptop's GPU.)
 
 ## Project layout
 
@@ -138,6 +153,6 @@ Copy any section of `word_punch/default_settings.toml` into a `settings.toml` at
 - [ ] Kid profiles with saved progress
 - [ ] Recorded voice reads missed words aloud (Piper TTS)
 - [ ] Hands-free menus (hover to select), results screen
-- [ ] Raspberry Pi 4 port (MoveNet backend, benchmarks, kiosk autostart)
+- [x] GPU models: YOLO11-pose, Whisper second opinion (Pi plan dropped)
 
 Font: [Andika](https://software.sil.org/andika/) by SIL International (OFL), designed for beginning readers.

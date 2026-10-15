@@ -18,6 +18,7 @@ class Slot:
     x: float = 0.5
     last_seen: float = -1e9
     active: bool = False
+    track_id: int | None = None
 
 
 @dataclass
@@ -36,6 +37,8 @@ class Tracker:
                 s.active, s.person = False, None
 
         people = sorted(people, key=lambda p: p.center_x)[: self.max_players]
+        if people and all(p.track_id is not None for p in people):
+            return self._update_by_id(people, t)
         active = [s for s in self.slots if s.active]
         assigned: dict[int, Person] = {}
         unmatched = list(people)
@@ -66,4 +69,32 @@ class Tracker:
                 s.person, s.x, s.last_seen, s.active = p, p.center_x, t, True
             elif s.active:
                 s.person = None  # still reserved, just not seen this frame
+        return self.slots
+
+    def _update_by_id(self, people: list[Person], t: float) -> list[Slot]:
+        """The pose tracker already numbers each person: keep each number in its slot."""
+        by_id = {s.track_id: s for s in self.slots if s.active and s.track_id is not None}
+        seen = set()
+        new = []
+        for p in people:
+            s = by_id.get(p.track_id)
+            if s is None:
+                new.append(p)
+                continue
+            s.person, s.x, s.last_seen = p, p.center_x, t
+            seen.add(s.index)
+        # New IDs: a slot freed by someone who left, else the closest free slot by position.
+        for p in new:
+            free = [s for s in self.slots if s.index not in seen and
+                    (not s.active or t - s.last_seen > self.keep_s * 0.5 or s.person is None)]
+            if not free:
+                continue
+            # prefer a slot whose last position was near (same kid re-detected with a new ID)
+            s = min(free, key=lambda s: (s.active and t - s.last_seen < self.keep_s and abs(s.x - p.center_x) > self.max_jump,
+                                         abs(s.x - p.center_x) if s.active else 1.0 + s.index))
+            s.person, s.x, s.last_seen, s.active, s.track_id = p, p.center_x, t, True, p.track_id
+            seen.add(s.index)
+        for s in self.slots:
+            if s.index not in seen and s.active:
+                s.person = None
         return self.slots

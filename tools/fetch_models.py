@@ -17,6 +17,8 @@ POSE = {
     "pose_landmarker_heavy.task":
         "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task",
 }
+YOLO_URL = "https://github.com/ultralytics/assets/releases/download/v8.3.0/{}"
+YOLO_POSE = ["yolo11n-pose.pt", "yolo11s-pose.pt", "yolo11m-pose.pt", "yolo11l-pose.pt", "yolo11x-pose.pt"]
 VOICE = "en_US-lessac-medium"  # Piper voice for reading words aloud
 VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/"
 VOSK_MODELS = ["vosk-model-small-en-us-0.15",    # fast (Raspberry Pi)
@@ -52,6 +54,9 @@ def main() -> int:
             with zipfile.ZipFile(zip_path) as z:
                 z.extractall(MODELS)
             zip_path.unlink()
+    for name in YOLO_POSE:
+        if not (MODELS / name).exists():
+            download(YOLO_URL.format(name), MODELS / name)
     for ext in (".onnx", ".onnx.json"):
         dest = MODELS / f"{VOICE}{ext}"
         if not dest.exists():

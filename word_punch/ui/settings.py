@@ -94,10 +94,11 @@ class SettingsScreen:
                  [("auto", "auto")] + [(v, f"{v}  ({'brighter, slower' if v > -5 else 'darker, faster'})")
                                        for v in (-3, -4, -5, -6, -7)], "camera",
                  "auto can drop to ~15 fps in a dim room"),
-            Item("Pose model", "pose", "mediapipe_model",
-                 [(str(_models() / f"pose_landmarker_{m}.task"), label) for m, label in
-                  (("lite", "lite (fastest)"), ("full", "full (best here)"), ("heavy", "heavy (slow)"))],
-                 "camera", note="full was as fast as lite on this laptop and a bit more sure"),
+            Item("Pose model", "pose", "yolo_model",
+                 [(str(_models() / f"yolo11{m}-pose.pt"), label) for m, label in
+                  (("x", "YOLO extra large (best)"), ("l", "YOLO large"), ("m", "YOLO medium"),
+                   ("s", "YOLO small"), ("n", "YOLO nano (fastest)"))],
+                 "camera", note="all run on the GPU; x was steadiest and still ~16 ms per frame"),
             Item("Smoothing", "pose", "smoothing",
                  [("off", "off"), ("low", "low"), ("medium", "medium"), ("high", "high (steadiest)")],
                  note="steadier skeletons, hats and hand rings (punches still use the raw pose)"),
@@ -107,6 +108,10 @@ class SettingsScreen:
                  [(str(_models() / "vosk-model-en-us-0.22-lgraph"), "accurate (best for kids)"),
                   (str(_models() / "vosk-model-small-en-us-0.15"), "fast (for Raspberry Pi)")], "mic",
                  note="the accurate model hears kids' voices much better"),
+            Item("Whisper second opinion", "speech", "second_opinion", ON_OFF, "mic",
+                 note="when the fast listener can't place a word, Whisper (GPU) tries - helps kids' voices"),
+            Item("Whisper strictness", "speech", "choice_floor",
+                 [(-1.6, "strict (fewer mistakes)"), (-2.0, "balanced"), (-2.5, "forgiving (catches more)")], "mic"),
             Item("Save unheard speech", "speech", "save_misses", ON_OFF, "mic",
                  note="saves clips it couldn't understand to logs/audio (for tuning) - kids' voices!"),
             Item("Listen for", "speech", "grammar",

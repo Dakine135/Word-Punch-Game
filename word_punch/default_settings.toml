@@ -13,9 +13,14 @@ height = 360
 fps = 30
 
 [pose]
-backend = "mediapipe"
-mediapipe_model = "models/pose_landmarker_full.task"   # lite / full / heavy (full: as fast as lite here)
-smoothing = "medium"     # off / low / medium / high - steadier skeletons, hats and hand rings
+# YOLO11-pose on the GPU: steadier (1.3 vs 9.7 px/frame wobble), finds the player every frame,
+# and tracks each kid with an ID so players don't get jumbled. "mediapipe" = old CPU model.
+backend = "yolo"
+yolo_model = "models/yolo11x-pose.pt"   # n / s / m / l / x (x: ~16 ms per frame on the RTX 4080)
+yolo_imgsz = 640
+yolo_conf = 0.35
+mediapipe_model = "models/pose_landmarker_full.task"
+smoothing = "low"        # off / low / medium / high - steadier skeletons, hats and hand rings
 max_people = 3
 input_width = 480    # frame is downscaled to this width before pose detection
 min_detection_confidence = 0.5
@@ -32,6 +37,10 @@ min_visibility = 0.4
 slice_speed = 5.0        # slice mode: hand speed (shoulder-widths per second) that counts as a swipe
 
 [speech]
+engine = "vosk"          # vosk (fast, listens for the on-screen words) | choice (Whisper picks the on-screen word)
+second_opinion = true    # when Vosk hears a voice but can't place it, Whisper (GPU) picks the on-screen word
+choice_model = "openai/whisper-large-v3-turbo"
+choice_floor = -2.0      # Whisper's confidence cutoff: -1.6 stricter, -2.5 looser (more hits, more false alarms)
 # The bigger model hears kids' voices much better (child-pitched test: 85% -> 96%).
 # The small one is faster - use it on a Raspberry Pi if the big one is too slow.
 model = "models/vosk-model-en-us-0.22-lgraph"

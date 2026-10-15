@@ -32,6 +32,7 @@ class Keypoint:
 @dataclass
 class Person:
     keypoints: dict[str, Keypoint] = field(default_factory=dict)
+    track_id: int | None = None  # same number for the same kid across frames (YOLO tracker)
 
     def get(self, name: str, min_vis: float = 0.0) -> Keypoint | None:
         kp = self.keypoints.get(name)
@@ -61,11 +62,15 @@ class Person:
 
     def to_wire(self) -> dict:
         """Plain dict for sending across processes."""
-        return {k: (v.x, v.y, v.vis) for k, v in self.keypoints.items()}
+        d = {k: (v.x, v.y, v.vis) for k, v in self.keypoints.items()}
+        d["_id"] = self.track_id
+        return d
 
     @classmethod
     def from_wire(cls, d: dict) -> "Person":
-        return cls({k: Keypoint(*v) for k, v in d.items()})
+        d = dict(d)
+        tid = d.pop("_id", None)
+        return cls({k: Keypoint(*v) for k, v in d.items()}, track_id=tid)
 
 
 class PoseBackend(Protocol):
@@ -75,6 +80,9 @@ class PoseBackend(Protocol):
 
 
 def create_backend(name: str, cfg: dict) -> PoseBackend:
+    if name == "yolo":
+        from .yolo_backend import YoloBackend
+        return YoloBackend(cfg)
     if name == "mediapipe":
         from .mediapipe_backend import MediaPipeBackend
         return MediaPipeBackend(cfg)

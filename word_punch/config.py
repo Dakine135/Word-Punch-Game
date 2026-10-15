@@ -21,7 +21,8 @@ def load(path: Path | None = None) -> dict:
     if user.exists():
         cfg = _merge(cfg, tomllib.loads(user.read_text(encoding="utf-8")))
     # Model paths are relative to the project root.
-    for section, key in (("pose", "mediapipe_model"), ("speech", "model"), ("voice", "model")):
+    for section, key in (("pose", "mediapipe_model"), ("pose", "yolo_model"), ("speech", "model"),
+                         ("voice", "model")):
         p = Path(cfg[section][key])
         if not p.is_absolute():
             cfg[section][key] = str(ROOT / p)
