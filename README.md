@@ -31,14 +31,18 @@ A reading game: sight words (or letters) fall from the sky over a mirrored camer
 
 ## Setup (Windows laptop with an NVIDIA GPU)
 
+Lives at `D:\WordPunch` (game, models and Python environment together).
+
 ```bash
-py -3.11 -m venv %USERPROFILE%\.venvs\word-punch
-%USERPROFILE%\.venvs\word-punch\Scripts\pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-%USERPROFILE%\.venvs\word-punch\Scripts\pip install -r requirements.txt
-%USERPROFILE%\.venvs\word-punch\Scripts\python tools/fetch_models.py
+cd /d D:\WordPunch
+py -3.11 -m venv .venv
+.venv\Scripts\pip install -r requirements-lock.txt --extra-index-url https://download.pytorch.org/whl/cu128
+.venv\Scripts\python tools/fetch_models.py
 ```
 
-(The venv lives outside OneDrive on purpose. Whisper downloads itself on first run.)
+`requirements-lock.txt` pins the exact versions that are known to work (including the CUDA
+build of PyTorch); `requirements.txt` lists the main packages. Downloaded models (YOLO, Vosk,
+Piper, and Whisper in `models/hf`) stay in `models/`.
 
 ### Models (all offline, on this laptop)
 
@@ -56,7 +60,7 @@ the on-screen words instead.
 Desktop shortcut (double-click to play, fullscreen, no console window):
 
 ```bash
-python tools/make_shortcut.py
+.venv\Scripts\python tools/make_shortcut.py
 ```
 
 It runs `launch_word_punch.pyw`; if the game ever stops with an error, details are in
