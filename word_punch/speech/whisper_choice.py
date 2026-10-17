@@ -54,8 +54,10 @@ class WhisperChooser:
         with self.torch.no_grad():
             return self.model.model.encoder(feats).last_hidden_state
 
-    def _score(self, enc, texts: list[str]) -> list[float]:
+    def _score(self, enc, texts: list[str], batch: int = 24) -> list[float]:
         """Average log-prob per token (text + end) for each candidate transcript."""
+        if len(texts) > batch:  # big word lists (letters: 26 x 6 spellings) would run out of GPU memory
+            return [s for i in range(0, len(texts), batch) for s in self._score(enc, texts[i:i + batch], batch)]
         torch = self.torch
         tok = self.proc.tokenizer
         seqs = [self.prefix + tok.encode(t, add_special_tokens=False) + [self.eos] for t in texts]

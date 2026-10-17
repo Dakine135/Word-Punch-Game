@@ -585,9 +585,12 @@ class App:
     def poll_speech(self, now: float):
         if not self.speech:
             return
-        from .speech.service import Heard, Voice
+        from .speech.service import Heard, Utterance, Voice
         for ev in self.speech.poll():
-            if isinstance(ev, Heard):
+            if isinstance(ev, Utterance):
+                if self.state == "playing":
+                    self.log_speech("utt", " ".join(f"{k}={v}" for k, v in ev.info.items()), None)
+            elif isinstance(ev, Heard):
                 self.say(ev.word, now)
             elif isinstance(ev, Voice):
                 self.heard_log.append("?")

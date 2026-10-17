@@ -32,7 +32,7 @@ import pygame
 
 from word_punch import config
 from word_punch.speech.matcher import match_strength
-from word_punch.speech.service import Heard, SpeechService, Transcript, Voice, list_input_devices
+from word_punch.speech.service import Heard, SpeechService, Transcript, Utterance, Voice, list_input_devices
 from word_punch.ui.mic_meter import draw_mic_meter
 from word_punch.ui.render import font as game_font
 from word_punch.words import WordBank, norm
@@ -224,6 +224,8 @@ def main() -> int:
                 consumed = False  # safety: utterance never got a final transcript
             for ev in speech.poll():
                 last_event = now
+                if isinstance(ev, Utterance):
+                    continue
                 if isinstance(ev, Transcript):
                     if not ev.final:
                         live = ev.text

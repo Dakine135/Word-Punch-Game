@@ -32,6 +32,12 @@ class Voice:
 
 
 @dataclass
+class Utterance:
+    """One stretch of speech and what each model made of it (for logs/game_*.csv)."""
+    info: dict
+
+
+@dataclass
 class Transcript:
     """Unrestricted transcription (any English words), for testing/debugging only.
 
@@ -176,11 +182,13 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
     pending_vocab = None        # applied between utterances so a word in progress isn't lost
     pending_since = 0.0
     in_utterance = False
-    loudest = 0.0               # loudest block in the current utterance
+    floor = 0.3                 # background noise level (0..1): music, fans, the room
     current_vocab = list(vocab)
     from collections import deque
     pre_roll: deque = deque(maxlen=8)   # ~0.4 s before speech starts
-    utter: list[bytes] = []             # audio of the current utterance (when saving misses)
+    recent: deque = deque(maxlen=20)    # (word, time) Vosk has sent
+    # Whisper's own look at each stretch of speech (found by loudness, not by Vosk):
+    seg = {"audio": [], "voiced": 0, "quiet": 0, "loud": 0.0, "start": 0.0}
     audio_q: queue.Queue = queue.Queue()
     muted_until = 0.0
     sent: list[str] = []  # words of the current utterance already sent, by position
@@ -199,10 +207,38 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                 out_q.put(("voice", now))
             else:
                 out_q.put(("heard", (w, now, final)))
+                recent.append((w, now))
             if i < len(sent):
                 sent[i] = w
             else:
                 sent.append(w)
+
+    def end_segment(now, gate):
+        """A stretch of speech just ended: did Whisper hear an on-screen word Vosk missed?"""
+        audio, voiced, loud, start = b"".join(seg["audio"]), seg["voiced"], seg["loud"], seg["start"]
+        seg.update(audio=[], voiced=0, quiet=0, loud=0.0)
+        if voiced < 3:  # under 0.15 s of sound: a clap or a thud
+            return
+        vosk_words = [w for w, t in recent if t >= start - 1.0]
+        diag = {"peak": round(loud, 2), "floor": round(floor, 2), "gate": round(gate, 2),
+                "secs": round(len(audio) / 2 / rate, 1), "vosk": " ".join(vosk_words) or "-"}
+        picked = None
+        if chooser is not None:
+            try:
+                x = np.frombuffer(audio, np.int16).astype(np.float32) / 32768
+                picked, info = chooser.choose(x, current_vocab, cfg.get("choice_floor", -2.0))
+                diag["whisper"] = f"{info.get('best')}:{info.get('score', 0):.2f}"
+            except Exception as e:
+                out_q.put(("error", f"second opinion: {e}"))
+        if picked and picked not in vosk_words:
+            out_q.put(("heard", (picked, now, True)))
+            out_q.put(("transcript", (f"(whisper) {picked}", True, [(picked, 1.0)])))
+            diag["used"] = "whisper"
+        if not picked and not vosk_words:
+            out_q.put(("voice", now))
+            if cfg.get("save_misses"):
+                _save_miss(audio, rate, current_vocab, diag)
+        out_q.put(("utt", diag))
 
     try:
         device = find_input_device(cfg["device"])
@@ -234,14 +270,19 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
             level = level_of(data)
             out_q.put(("level", level))
             now = time.time()
+            # Someone is speaking when the mic is clearly above the room's background noise
+            # (kids across the room are much quieter than a grown-up next to the laptop).
+            floor += (level - floor) * (0.2 if level < floor else 0.003)  # drops fast, rises slowly
+            gate = min(cfg.get("voice_level", 0.45), floor + cfg.get("voice_margin", 0.1))
             if pending_vocab is not None and (not in_utterance or now - pending_since > 2.0):
                 current_vocab = list(pending_vocab)
                 rec = make_recognizer(pending_vocab)
-                pending_vocab, in_utterance, loudest = None, False, 0.0
+                pending_vocab, in_utterance = None, False
                 sent.clear()
             if now < muted_until:
                 rec.Reset()
                 sent.clear()
+                seg.update(audio=[], voiced=0, quiet=0, loud=0.0)
                 continue
 
             if free is not None:
@@ -257,46 +298,39 @@ def _speech_main(cfg: dict, vocab: list[str], cmd_q: mp.Queue, out_q: mp.Queue, 
                         last_partial = partial
                         out_q.put(("transcript", (partial, False, [])))
 
-            loudest = max(loudest, level)
-            if cfg.get("save_misses") or chooser is not None:
-                if in_utterance or level >= cfg.get("voice_level", 0.45):
-                    if not utter:
-                        utter.extend(pre_roll)
-                    utter.append(data)
-                else:
-                    pre_roll.append(data)
+            # Vosk: fast, reacts while the word is still being said.
             if rec.AcceptWaveform(data):
                 result = json.loads(rec.Result())
                 words = [w["word"] if w.get("conf", 1.0) >= cfg["min_confidence"] else "[unk]"
                          for w in result.get("result", [])]
                 send(words, now, True)
-                if not words and not sent and loudest >= cfg.get("voice_level", 0.45):
-                    # A clear sound Vosk couldn't place: ask Whisper before giving up.
-                    picked = None
-                    if chooser is not None and utter:
-                        audio = np.frombuffer(b"".join(utter), np.int16).astype(np.float32) / 32768
-                        try:
-                            picked, info = chooser.choose(audio, current_vocab, cfg.get("choice_floor", -2.0))
-                        except Exception as e:
-                            out_q.put(("error", f"second opinion: {e}"))
-                    if picked:
-                        out_q.put(("heard", (picked, now, True)))
-                        out_q.put(("transcript", (f"(whisper) {picked}", True, [(picked, 1.0)])))
-                    else:
-                        out_q.put(("voice", now))
-                        if cfg.get("save_misses") and utter:
-                            _save_miss(b"".join(utter), rate, current_vocab)
-                utter = []
                 sent.clear()
-                in_utterance, loudest = False, 0.0
+                in_utterance = False
             else:
                 partial = json.loads(rec.PartialResult()).get("partial", "").split()
-                in_utterance = in_utterance or bool(partial) or level >= cfg.get("voice_level", 0.45)
+                in_utterance = in_utterance or bool(partial)
                 if cfg["use_partials"]:
                     send(partial, now, False)
 
+            # Whisper: checks every stretch of speech once it ends (kids' quiet or unclear
+            # words that Vosk drops, files as "[unk]" or mistakes for another word).
+            if level >= gate:
+                if not seg["audio"]:
+                    seg["audio"], seg["start"] = list(pre_roll), now
+                seg["audio"].append(data)
+                seg["voiced"] += 1
+                seg["quiet"] = 0
+                seg["loud"] = max(seg["loud"], level)
+            elif seg["audio"]:
+                seg["audio"].append(data)
+                seg["quiet"] += 1
+            else:
+                pre_roll.append(data)
+            if seg["audio"] and (seg["quiet"] >= 8 or len(seg["audio"]) >= 160):  # 0.4 s pause, or 8 s
+                end_segment(now, gate)
 
-def _save_miss(audio: bytes, rate: int, vocab: list[str]) -> None:
+
+def _save_miss(audio: bytes, rate: int, vocab: list[str], diag: dict | None = None) -> None:
     """logs/audio/<time>.wav + .json (what it was listening for) - for tuning to kids' voices."""
     import wave
     from pathlib import Path
@@ -308,7 +342,7 @@ def _save_miss(audio: bytes, rate: int, vocab: list[str]) -> None:
         w.setsampwidth(2)
         w.setframerate(rate)
         w.writeframes(audio)
-    (Path(str(stem) + ".json")).write_text(json.dumps({"listening_for": vocab}), encoding="utf-8")
+    (Path(str(stem) + ".json")).write_text(json.dumps({"listening_for": vocab, **(diag or {})}), encoding="utf-8")
 
 
 class SpeechService:
@@ -364,6 +398,8 @@ class SpeechService:
                 events.append(Voice(arg))
             elif kind == "transcript":
                 events.append(Transcript(*arg))
+            elif kind == "utt":
+                events.append(Utterance(arg))
         return events
 
     def stop(self, wait: bool = True) -> None:

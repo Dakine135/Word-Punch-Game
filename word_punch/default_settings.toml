@@ -51,7 +51,8 @@ sample_rate = 16000
 use_partials = true      # react to words before the kid stops talking (faster, a bit less sure)
 min_confidence = 0.0     # drop final words below this confidence (0..1)
 grammar = "screen"       # "screen" = listen only for words on screen (best); "level" = all words in play
-voice_level = 0.45       # mic level (0..1) that counts as someone speaking
+voice_level = 0.45       # mic level (0..1) that always counts as someone speaking
+voice_margin = 0.1       # ...or this far above the room's background noise (quiet kids across the room)
 save_misses = false      # save speech it couldn't place to logs/audio/ (for tuning to the kids' voices)
 
 [menu]
