@@ -21,6 +21,7 @@ yolo_imgsz = 640
 yolo_conf = 0.35
 mediapipe_model = "models/pose_landmarker_full.task"
 smoothing = "low"        # off / low / medium / high - steadier skeletons, hats and hand rings
+gesture_model = "models/gesture_recognizer.task"   # open palm vs fist, for menu clicks
 max_people = 3
 input_width = 480    # frame is downscaled to this width before pose detection
 min_detection_confidence = 0.5
@@ -52,6 +53,10 @@ min_confidence = 0.0     # drop final words below this confidence (0..1)
 grammar = "screen"       # "screen" = listen only for words on screen (best); "level" = all words in play
 voice_level = 0.45       # mic level (0..1) that counts as someone speaking
 save_misses = false      # save speech it couldn't place to logs/audio/ (for tuning to the kids' voices)
+
+[menu]
+select = "palm"          # "palm" = raise a hand over a button and open your palm; "hover" = hold a hand still
+palm_hold_s = 0.4        # how long an open palm must stay on a button
 
 [game]
 width = 1280

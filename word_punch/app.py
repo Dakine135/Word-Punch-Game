@@ -105,6 +105,9 @@ class App:
         self.pending_restart: dict[str, float] = {}
         self.skeletons = SkeletonLayer(self.size)
         self.blades: dict = {}        # (who, hand) -> deque[(t, x, y, player)] trail points
+        self.hand_gestures: dict = {} # (slot, wrist) -> (gesture, time seen)
+        self.menu_hands: list = []    # raised hands in menus: (player, x, y, gesture)
+        self._gestures_on = None
         self._last_hand: dict = {}    # (slot, hand) -> (t, x, y, scale) normalized, for swipe speed
         self._last_mouse = None       # (t, x, y) while a button is held
         self.mouse_moved_at = 0.0
@@ -128,6 +131,7 @@ class App:
         self.frame_clicks: list[tuple[int, int]] = []
         self.frame_keys: list = []
         self.over_buttons: list[Button] = []
+        Menu.select_mode = cfg.get("menu", {}).get("select", "palm")
         self.menu = Menu(self.renderer, self.size, self.store, bank, gentle=cfg["rules"]["gentle"],
                          style=cfg["rules"].get("style", "punch"))
         self.state = "menu" if args.use_menu else "playing"
@@ -168,6 +172,8 @@ class App:
         if section == "voice" and key == "volume":
             self.voice.set_volume(self.cfg["voice"]["volume"])
             self.speak("Great job!")
+        elif section == "menu" and key == "select":
+            Menu.select_mode = self.cfg["menu"]["select"]
         elif section == "pose" and key == "smoothing":
             self.smoother.set_preset(self.cfg["pose"]["smoothing"])
         elif section == "game" and key == "music":
@@ -485,6 +491,12 @@ class App:
             return None
         return self.smoother.at(slot.index, now if now is not None else time.time()) or slot.person
 
+    def draw_menu_hands(self, surf: pygame.Surface, now: float) -> None:
+        if self._gestures_on:
+            self.renderer.draw_hand_cursors(surf, self.menu_hands, now)
+        else:
+            self.renderer.draw_hands(surf, self.hands, now)
+
     def draw_skeletons(self, surf: pygame.Surface) -> None:
         if not (self.vision and self.cfg["game"].get("skeletons", True)):
             return
@@ -559,6 +571,8 @@ class App:
             for s in slots:
                 if s.person:
                     self.smoother.update(s.index, s.person, t)
+                    for wrist, (g, score) in s.person.gestures.items():
+                        self.hand_gestures[(s.index, wrist)] = (g, t)
                 elif not s.active:
                     self.smoother.drop(s.index)
             for s in slots:
@@ -579,10 +593,17 @@ class App:
                     self.effects.ring(x, y, color, r0=20, r1=110, life=0.3, width=10)
                     self.effects.sparkle(x, y, color, 16)
                     self.game.punch(s.index, x, now, y)
+        self.menu_hands = []
         for s in self.tracker.slots:
             person = self.shown(s, now)
             if not person:
                 continue
+            for hand, elbow in (("left_wrist", "left_elbow"), ("right_wrist", "right_elbow")):
+                kp, el = person.get(hand, 0.4), person.get(elbow, 0.3)
+                if kp and el and kp.y < el.y:  # raised hand
+                    g, seen = self.hand_gestures.get((s.index, hand), (None, 0.0))
+                    x, y = self.view.to_screen(kp.x + (kp.x - el.x) * 0.35, kp.y + (kp.y - el.y) * 0.35)
+                    self.menu_hands.append((s.index, x, y, g if now - seen < 0.5 else None))
             for hand in ("left_wrist", "right_wrist"):
                 kp = person.get(hand, 0.4)
                 if kp:
@@ -745,7 +766,7 @@ class App:
             self.draw_skeletons(surf)
             self.draw_hats(surf)
             self.menu.draw(surf, now)
-            r.draw_hands(surf, self.hands, now)
+            self.draw_menu_hands(surf, now)
             self.effects.draw(surf)
             if self.debug:
                 self._draw_debug(surf)
@@ -804,9 +825,9 @@ class App:
                              unlocks=self.round_unlocks, now=now)
             for b in self.over_buttons:
                 draw_button(surf, r, b, now)
-            r.draw_say_hint(surf, "Hold your hand on a button   (Enter = play again" +
-                            (", M = menu)" if self.args.use_menu else ")"))
-            r.draw_hands(surf, self.hands, now)
+            how = "Raise a hand over a button and open your palm" if self._gestures_on else "Hold your hand on a button"
+            r.draw_say_hint(surf, how + "   (Enter = play again" + (", M = menu)" if self.args.use_menu else ")"))
+            self.draw_menu_hands(surf, now)
 
         if self.effects.shake > 0:
             import random
@@ -816,8 +837,21 @@ class App:
 
     def _pointers(self) -> Pointers:
         mouse = pygame.mouse.get_pos() if pygame.mouse.get_focused() else None
+        mode = self.cfg.get("menu", {}).get("select", "palm")
+        if mode == "palm" and self.vision:
+            hands = [(x, y) for _, x, y, _ in self.menu_hands]
+            palms = [(x, y) for _, x, y, g in self.menu_hands if g == "Open_Palm"]
+            return Pointers(hands=hands, mouse=mouse, clicks=self.frame_clicks, punches=self.frame_punches,
+                            palms=palms, mode="palm", hold_s=self.cfg.get("menu", {}).get("palm_hold_s", 0.4))
         return Pointers(hands=[(x, y) for _, x, y in self.hands], mouse=mouse,
                         clicks=self.frame_clicks, punches=self.frame_punches)
+
+    def _update_gesture_flag(self) -> None:
+        want = bool(self.vision) and self.cfg.get("menu", {}).get("select", "palm") == "palm" and (
+            self.state == "menu" or self.game.over)
+        if want != self._gestures_on:
+            self._gestures_on = want
+            self.vision.set_gestures(want) if self.vision else None
 
     def step_menu(self, dt: float, now: float) -> None:
         req = self.menu.step(dt, now, self._pointers(), self.frame_keys)
@@ -879,6 +913,7 @@ class App:
                 if not self.handle_events(now):
                     break
                 self.apply_restarts(now)
+                self._update_gesture_flag()
                 self.voice.update()
                 self.music.play(self.music_mood())
                 if self.voice.speaking() != self._ducked:

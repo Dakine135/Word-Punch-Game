@@ -36,6 +36,7 @@ class Button:
     data: object = None
     mouse_only: bool = False    # grown-up buttons: a click, never a hand hover or punch
     mouse_over: bool = False    # highlight only; the mouse never "holds" a button
+    pointed: bool = False       # a hand is over it (palm mode: highlight, open palm to select)
 
 
 @dataclass
@@ -45,6 +46,9 @@ class Pointers:
     mouse: tuple | None = None
     clicks: list = field(default_factory=list)   # (x, y)
     punches: list = field(default_factory=list)  # (x, y)
+    palms: list = field(default_factory=list)    # (x, y) raised hands showing an open palm
+    mode: str = "hover"                          # "palm": only open palms select; hands just point
+    hold_s: float = HOLD_S
 
 
 def update_buttons(buttons: list[Button], ptr: Pointers, dt: float) -> Button | None:
@@ -60,7 +64,11 @@ def update_buttons(buttons: list[Button], ptr: Pointers, dt: float) -> Button | 
             continue
         if b.mouse_only:
             continue
-        inside = [p for p in ptr.hands if b.rect.collidepoint(p)]
+        b.pointed = any(b.rect.collidepoint(p) for p in ptr.hands)
+        if ptr.mode == "palm":
+            inside = [p for p in ptr.palms if b.rect.collidepoint(p)]
+        else:
+            inside = [p for p in ptr.hands if b.rect.collidepoint(p)]
         if any(b.rect.collidepoint(p) for p in ptr.punches):
             fired = b
         if not inside:
@@ -70,7 +78,7 @@ def update_buttons(buttons: list[Button], ptr: Pointers, dt: float) -> Button | 
         if b.latched:
             continue
         b.hover += dt
-        if b.hover >= HOLD_S:
+        if b.hover >= (ptr.hold_s if ptr.mode == "palm" else HOLD_S):
             fired = b
     if fired:
         fired.hover, fired.latched = 0.0, True
@@ -90,12 +98,12 @@ def draw_button(surface: pygame.Surface, r: Renderer, b: Button, now: float, foc
     surface.blit(body, rect)
     # hover progress fills from the bottom
     if b.hover > 0:
-        frac = min(1.0, b.hover / HOLD_S)
+        frac = min(1.0, b.hover / getattr(b, "hold_s", HOLD_S))
         fill = pygame.Rect(rect.left, rect.bottom - int(rect.height * frac), rect.width, int(rect.height * frac))
         f = pygame.Surface(fill.size, pygame.SRCALPHA)
         f.fill((255, 255, 255, 70))
         surface.blit(f, fill)
-    focused = focused or b.mouse_over
+    focused = focused or b.mouse_over or b.pointed
     border = WHITE if (b.selected or focused) else (180, 185, 210)
     pygame.draw.rect(surface, border, rect, 6 if (b.selected or focused) else 3, border_radius=22)
     label = r.hud_font.render(b.label, True, WHITE if b.enabled else DIM)
@@ -132,8 +140,20 @@ def hint(surface, r: Renderer, text: str) -> None:
     surface.blit(t, t.get_rect(midbottom=(surface.get_width() // 2, surface.get_height() - 12)))
 
 
+HINTS = {
+    "palm": {"who": "Raise your hand over your name and OPEN your palm",
+             "any": "Raise your hand over a button and OPEN your palm",
+             "arrows": "Raise your hand over an arrow and open your palm."},
+    "hover": {"who": "Hold your hand on your name (or punch it!)",
+              "any": "Hold your hand on a button",
+              "arrows": "Hold your hand on the arrows to change."},
+}
+
+
 class Menu:
     """Owns the start screens. step() returns a start request when it's time to play."""
+
+    select_mode = "palm"
 
     def __init__(self, renderer: Renderer, size: tuple[int, int], store: ProfileStore, bank: WordBank,
                  gentle: bool = False, max_players: int = 3, style: str = "punch"):
@@ -371,20 +391,20 @@ class Menu:
             return
         if self.screen == "game":
             title(surface, r, "Pick a game!", 90)
-            hint(surface, r, "Hold your hand on a game")
+            hint(surface, r, HINTS[self.select_mode]["any"])
         elif self.screen == "who":
             title(surface, r, "Who's playing?", 90)
-            hint(surface, r, "Hold your hand on your name (or punch it!)      P = players   S = settings")
+            hint(surface, r, HINTS[self.select_mode]["who"] + "      P = players   S = settings")
         else:
             title(surface, r, "How do you want to play?", 100)
-            hint(surface, r, "Hold your hand on a button      Backspace = back")
+            hint(surface, r, HINTS[self.select_mode]["any"] + "      Backspace = back")
         for b in buttons:
             draw_button(surface, r, b, now)
 
     def _draw_closet(self, surface, now) -> None:
         r = self.r
         title(surface, r, "Dress up!", 70)
-        hint(surface, r, "Hold your hand on the arrows to change. Earn stars to unlock more!")
+        hint(surface, r, HINTS[self.select_mode]["arrows"] + " Earn stars to unlock more!")
         n = len(self.joined)
         col = self.w / max(1, n)
         for i, p in enumerate(self.joined):

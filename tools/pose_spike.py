@@ -35,6 +35,7 @@ def main() -> int:
     cfg = config.load()
     vision = VisionService(cfg)
     vision.start()
+    vision.set_gestures(True)  # show open palm / fist on raised hands
 
     pygame.init()
     size = (cfg["game"]["width"], cfg["game"]["height"])
@@ -89,6 +90,12 @@ def main() -> int:
                 for hand in ("left_wrist", "right_wrist"):
                     if kp[hand].vis > 0.3:
                         pygame.draw.circle(screen, color, view.to_screen(kp[hand].x, kp[hand].y), 18, 5)
+                        if hand in s.person.gestures:
+                            g, score = s.person.gestures[hand]
+                            label = font.render(f"{g.replace('_', ' ')} {score:.0%}", True,
+                                                (120, 255, 140) if g == "Open_Palm" else (255, 255, 255))
+                            hx, hy = view.to_screen(kp[hand].x, kp[hand].y)
+                            screen.blit(label, (hx + 22, hy - 12))
                 nose = kp["nose"]
                 label = font.render(f"P{s.index + 1}  punches: {punch_counts[s.index]}", True, color)
                 x, y = view.to_screen(nose.x, nose.y)

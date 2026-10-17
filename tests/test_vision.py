@@ -104,3 +104,30 @@ def test_tracker_new_id_reuses_a_free_slot():
     tr.update([with_id(person(0.3), 1), with_id(person(0.7), 2)], 0.0)
     slots = tr.update([with_id(person(0.3), 1), with_id(person(0.69), 5)], 2.0)  # id 2 lost, 5 appears
     assert slots[1].track_id == 5 and slots[0].track_id == 1
+
+
+def test_hand_box_and_raised():
+    from word_punch.vision.gestures import hand_box, raised
+    from word_punch.vision.pose_backend import Keypoint
+    p = person(0.5, wrist_y=0.2, shoulder_y=0.4)
+    p.keypoints["left_elbow"] = Keypoint(0.44, 0.3, 0.9)
+    assert raised(p, "left_wrist", "left_elbow")
+    x0, y0, x1, y1 = hand_box(p, "left_wrist", "left_elbow", 960, 540)
+    assert x1 > x0 and y1 > y0 and y0 < 0.2 * 540  # box reaches above the wrist (where the hand is)
+    p.keypoints["left_elbow"] = Keypoint(0.44, 0.1, 0.9)
+    assert not raised(p, "left_wrist", "left_elbow")
+
+
+def test_palm_mode_buttons_need_open_palm():
+    import pygame
+    from word_punch.ui.menu import Button, Pointers, update_buttons
+    b = Button("go", pygame.Rect(0, 0, 100, 100), "Go")
+    hand_only = Pointers(hands=[(50, 50)], mode="palm", hold_s=0.4)
+    for _ in range(60):
+        assert update_buttons([b], hand_only, 1 / 30) is None   # a raised hand just points
+    assert b.pointed
+    palm = Pointers(hands=[(50, 50)], palms=[(50, 50)], mode="palm", hold_s=0.4)
+    fired = None
+    for _ in range(20):
+        fired = fired or update_buttons([b], palm, 1 / 30)
+    assert fired is b                                           # open palm selects (~0.4 s)

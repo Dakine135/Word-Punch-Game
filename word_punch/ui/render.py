@@ -361,6 +361,31 @@ class Renderer:
             return f"{player.broken}/{game.round_words}"
         return f"{lane.broken}/{game.word_goal(lane)}"
 
+    def draw_hand_cursors(self, surface: pygame.Surface, hands: list, now: float) -> None:
+        """Menu cursors on raised hands: an open hand when a palm is seen, a fist otherwise."""
+        for player, x, y, gesture in hands:
+            color = PLAYER_COLORS[player % 3]
+            x, y = int(x), int(y)
+            r = int(self.h * 0.04)
+            if gesture == "Open_Palm":
+                glow = pygame.Surface((r * 4, r * 4), pygame.SRCALPHA)
+                pygame.draw.circle(glow, (*color, 90), (r * 2, r * 2), int(r * 1.9))
+                surface.blit(glow, (x - r * 2, y - r * 2))
+                pygame.draw.circle(surface, color, (x, y + r // 3), int(r * 0.8))       # palm
+                for i, ang in enumerate((-50, -22, 0, 22, 55)):                         # fingers
+                    a = math.radians(ang - 90)
+                    ln = r * (0.95 if i in (1, 2) else 0.8)
+                    x0, y0 = x + math.cos(a) * r * 0.55, y + r // 3 + math.sin(a) * r * 0.55
+                    pygame.draw.line(surface, color, (x0, y0), (x0 + math.cos(a) * ln, y0 + math.sin(a) * ln),
+                                     max(4, r // 3))
+                pygame.draw.circle(surface, WHITE, (x, y + r // 3), int(r * 0.8), 2)
+            else:
+                pygame.draw.circle(surface, color, (x, y), int(r * 0.85))                # fist / unsure
+                pygame.draw.circle(surface, WHITE, (x, y), int(r * 0.85), 3)
+                for i in range(3):
+                    kx = x - r // 2 + i * r // 2
+                    pygame.draw.line(surface, WHITE, (kx, y - r // 3), (kx, y), 2)
+
     def draw_hud(self, surface: pygame.Surface, game: Game, now: float = 0.0) -> None:
         pad = 14
         # Words emerge from behind this strip.

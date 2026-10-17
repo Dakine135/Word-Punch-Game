@@ -21,7 +21,7 @@ import numpy as np
 from .pose_backend import Person
 
 
-def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop) -> None:
+def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop, want_gestures=None) -> None:
     import cv2
 
     from .pose_backend import create_backend
@@ -86,6 +86,8 @@ def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop) -> None:
     t0 = time.time()
     last_t = 0.0
     pose_w = pose_cfg["input_width"]
+    frame_no = 0
+    gestures = None        # loaded the first time a menu asks for open palm / fist
     try:
         while not stop.is_set():
             with lock:
@@ -99,6 +101,19 @@ def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop) -> None:
                 small = cv2.resize(frame, (pose_w, int(h * pose_w / w)), interpolation=cv2.INTER_AREA)
             start = time.time()
             people = backend.detect(small, int((t - t0) * 1000))
+            # Menus: open palm vs fist for each raised hand (every other frame to stay quick).
+            frame_no += 1
+            if want_gestures is not None and want_gestures.value and people and frame_no % 2 == 0:
+                if gestures is None:
+                    try:
+                        from .gestures import HandGestures
+                        gestures = HandGestures(pose_cfg.get("gesture_model", ""))
+                    except Exception as e:
+                        out_q.put(("error", f"hand gestures off: {e}"))
+                        want_gestures.value = 0
+                if gestures is not None:
+                    for p in people[:3]:
+                        p.gestures = gestures.classify(frame, p)
             out_q.put(("pose", (t, [p.to_wire() for p in people], time.time() - start)))
     finally:
         backend.close()
@@ -134,6 +149,7 @@ class VisionService:
         self._shm = shared_memory.SharedMemory(create=True, size=self.width * self.height * 3)
         self._frame = np.ndarray((self.height, self.width, 3), dtype=np.uint8, buffer=self._shm.buf)
         self._seq = ctx.Value("L", 0)
+        self._gestures = ctx.Value("b", 0)
         self._out_q = ctx.Queue()
         self._stop = ctx.Event()
         self._proc = None
@@ -146,8 +162,12 @@ class VisionService:
     def start(self) -> None:
         self._proc = self._ctx.Process(
             target=_vision_main, daemon=True,
-            args=(self.cfg, self._shm.name, self._seq, self._out_q, self._stop))
+            args=(self.cfg, self._shm.name, self._seq, self._out_q, self._stop, self._gestures))
         self._proc.start()
+
+    def set_gestures(self, on: bool) -> None:
+        """Ask the vision process to read open palm / fist on raised hands (menus)."""
+        self._gestures.value = 1 if on else 0
 
     def latest_frame(self) -> np.ndarray | None:
         """The shared frame buffer (do not keep it; it is overwritten in place)."""

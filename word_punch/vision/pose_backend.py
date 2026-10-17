@@ -33,6 +33,7 @@ class Keypoint:
 class Person:
     keypoints: dict[str, Keypoint] = field(default_factory=dict)
     track_id: int | None = None  # same number for the same kid across frames (YOLO tracker)
+    gestures: dict = field(default_factory=dict)  # wrist name -> (gesture, score), menus only
 
     def get(self, name: str, min_vis: float = 0.0) -> Keypoint | None:
         kp = self.keypoints.get(name)
@@ -64,13 +65,16 @@ class Person:
         """Plain dict for sending across processes."""
         d = {k: (v.x, v.y, v.vis) for k, v in self.keypoints.items()}
         d["_id"] = self.track_id
+        if self.gestures:
+            d["_g"] = self.gestures
         return d
 
     @classmethod
     def from_wire(cls, d: dict) -> "Person":
         d = dict(d)
         tid = d.pop("_id", None)
-        return cls({k: Keypoint(*v) for k, v in d.items()}, track_id=tid)
+        gestures = d.pop("_g", {})
+        return cls({k: Keypoint(*v) for k, v in d.items()}, track_id=tid, gestures=gestures)
 
 
 class PoseBackend(Protocol):
