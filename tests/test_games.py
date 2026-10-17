@@ -104,6 +104,19 @@ def test_sentence_builder_in_order(bank):
     assert g.done_count == 1 and "sentence_done" in kinds(g)
 
 
+def test_sentence_builder_fills_in_one_letter_words(bank):
+    g = new(bank, "sentence", levels=("k4",), round_words=10)
+    g.pool = ["I have a red ball."]
+    t = run(g, 1.5)
+    assert [w.text for w in sorted(g.words, key=lambda w: w.slot)] == ["have", "red", "ball"]
+    assert g.tokens[g.placed] == "have"            # "I" was filled in already
+    for tok in ("have", "red", "ball"):
+        w = next(x for x in g.words if x.text == tok)
+        g.heard(w.text, t)
+        g._break(w, 0, t)
+    assert g.done_count == 1                        # "a" filled itself in too
+
+
 def test_sentences_have_levels(bank):
     s = load_sentences(bank)
     assert len(s) > 30

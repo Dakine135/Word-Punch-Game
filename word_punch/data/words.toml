@@ -45,7 +45,9 @@ words = []  # filled with A-Z and a-z at load time
 [levels.k1]
 name = "K - Q1"
 points = 10
-words = ["a", "I", "the", "is"]
+# The school list also has "a" and "I", but one-letter words are too short for the speech
+# recognizer to hear reliably, so they're left out of the game.
+words = ["the", "is"]
 
 [levels.k2]
 name = "K - Q2"

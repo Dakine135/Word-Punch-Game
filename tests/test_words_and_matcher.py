@@ -22,7 +22,7 @@ class T:
 def test_school_lists_have_expected_counts(bank):
     k = sum(len(bank.level(k).words) for k in ("k1", "k2", "k3", "k4"))
     g1 = sum(len(bank.level(k).words) for k in ("g1q1", "g1q2", "g1q3", "g1q4"))
-    assert k == 45
+    assert k == 43  # the school's 45, minus "a" and "I" (too short to hear reliably)
     assert g1 == 60  # sheet says "Total Words: 60"
 
 

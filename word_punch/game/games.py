@@ -364,6 +364,8 @@ class SentenceGame(Game):
         spots = [((c + 0.5) / cols, 0.45 + r * 0.25) for r in range(rows) for c in range(cols)]
         self.rng.shuffle(spots)
         for i, tok in enumerate(self.tokens):
+            if len(tok) == 1:
+                continue  # "I", "a": too short to hear reliably - filled in for them
             sx, sy = spots[i % len(spots)]
             bw, bh = self.measure(tok, False)
             x = self.w * (0.1 + 0.8 * sx) + self.rng.uniform(-30, 30)
@@ -373,7 +375,13 @@ class SentenceGame(Game):
             w.slot, w.ax, w.ay, w.phase = i, x, y, self.rng.uniform(0, 6.28)
             self.words.append(w)
             self._stat(track.owner, tok, "seen")
+        self._fill_short_words()
         self.events.append(Event("sentence_start", text=self.sentence))
+
+    def _fill_short_words(self) -> None:
+        """One-letter words fill themselves in, so the next blank is always a real word."""
+        while self.placed < len(self.tokens) and len(self.tokens[self.placed]) == 1:
+            self.placed += 1
 
     def _break(self, w, player, now, style="punch", angle=0.0):
         needed = self.tokens[self.placed] if self.placed < len(self.tokens) else None
@@ -384,6 +392,7 @@ class SentenceGame(Game):
         w.slot = self.placed
         super()._break(w, player, now, style, angle)
         self.placed += 1
+        self._fill_short_words()
         self.events.append(Event("place", w, player=player, x=w.x, y=w.y, text=w.text))
         if self.placed == len(self.tokens):
             self.done_count += 1

@@ -149,8 +149,7 @@ def test_letters_easy_any_voice_unlocks(bank):
 def test_level_up_after_mastery(bank):
     rules = dict(BASE_CFG["rules"], mastery_hits=1)
     track = Track(bank, "k1", rules)
-    for w in ["a", "I", "the"]:
-        assert not track.record_hit(w, "k1", 1.0)
+    assert not track.record_hit("the", "k1", 1.0)
     assert track.record_hit("is", "k1", 1.0)
     assert track.level_up() and track.level_key == "k2"
 
@@ -158,7 +157,7 @@ def test_level_up_after_mastery(bank):
 def test_slow_reads_dont_count_toward_mastery(bank):
     rules = dict(BASE_CFG["rules"], mastery_hits=1)
     track = Track(bank, "k1", rules)
-    for w in ["a", "I", "the", "is"]:
+    for w in ["the", "is"]:
         track.record_hit(w, "k1", 9.0)
     assert not track.mastered()
 
@@ -365,8 +364,9 @@ def test_review_is_recent_and_never_single_letters(bank):
     rng = random.Random(0)
     track = Track(bank, "g9", rules)
     assert track.review_levels() == ["g6", "g7", "g8"]          # only the last 3 levels
-    track = Track(bank, "k2", rules)                             # k1 ("a", "I", "the", "is") is review here
+    track = Track(bank, "k2", rules)                             # k1 is review here
     picks = {track.candidates(rng)[0].text for _ in range(200)}
     assert not any(len(w) == 1 for w in picks)
-    on_k1 = Track(bank, "k1", rules)                             # on K-Q1 itself "a" and "I" still show
-    assert {"a", "I"} <= {p.text for p in on_k1.candidates(random.Random(1))}
+    for key in bank.order:                                       # one-letter words only on Letters
+        lvl = bank.level(key)
+        assert lvl.is_letters or all(len(w) > 1 for w in lvl.words), key
