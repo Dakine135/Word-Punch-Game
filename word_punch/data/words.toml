@@ -3,7 +3,8 @@
 # Letters are generated in code (A-Z, a-z); their spoken aliases live in [letters] below.
 
 order = ["letters", "k1", "k2", "k3", "k4", "g1q1", "g1q2", "g1q3", "g1q4",
-         "g2a", "g2b", "g3a", "g3b", "g4", "g5", "g6", "g7", "g8", "g9", "g10", "g11", "g12"]
+         "g2a", "g2b", "g3a", "g3b", "g4", "g5", "g6", "g7", "g8", "g9", "g10", "g11", "g12",
+         "college", "masters", "doctorate"]
 
 # Words that sound the same. Hearing any member counts for every member,
 # and the spawner never puts two members of a group on screen at once.
@@ -193,6 +194,34 @@ words = ["acquiesce", "ameliorate", "anachronism", "antithesis", "assiduous", "c
          "capricious", "connoisseur", "deleterious", "egregious", "enervate", "esoteric",
          "garrulous", "idiosyncrasy", "impetuous", "inexorable", "loquacious", "magnanimous",
          "obfuscate", "perfunctory", "quintessential", "sycophant", "ubiquitous", "vicissitude"]
+
+# ---- University and beyond: words common in college reading, then graduate and doctoral
+# writing (research methods, philosophy, social and natural sciences).
+
+[levels.college]
+name = "College"
+points = 160
+words = ["anomaly", "coalesce", "conjecture", "corroborate", "dissonance", "extrapolate", "heuristic",
+         "iterate", "methodology", "nomenclature", "ostensible", "paradigm", "quantitative",
+         "qualitative", "synthesis", "theoretical", "trajectory", "unprecedented", "variable",
+         "cognition", "catalyst", "criterion", "postulate", "infer"]
+
+[levels.masters]
+name = "Master's"
+points = 170
+words = ["abstraction", "axiom", "bifurcation", "cognizant", "corollary", "dialectic", "discourse",
+         "efficacy", "epistemic", "exegesis", "hegemony", "hermeneutics", "heterogeneous",
+         "homogeneous", "intrinsic", "longitudinal", "ontology", "phenomenology", "positivism",
+         "praxis", "reification", "salient", "stochastic", "normative"]
+
+[levels.doctorate]
+name = "Doctorate"
+points = 180
+words = ["anthropomorphism", "apotheosis", "asymptotic", "autochthonous", "concomitant",
+         "deontological", "epiphenomenon", "eschatology", "historiography", "immanent",
+         "incommensurable", "interstitial", "isomorphic", "metaphysics", "verisimilitude",
+         "palimpsest", "parsimonious", "perspicacious", "phylogenetic", "recapitulation",
+         "solipsism", "teleological", "epistemology", "ideographic"]
 
 # Word sound-alikes: what the recognizer often hears when a kid reads the word. They count
 # for the word (a little weaker than the real word). Add your own without editing this file:

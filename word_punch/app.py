@@ -15,7 +15,7 @@ from .profiles import Profile, ProfileStore, apply_to_track, update_from_game
 from .ui import display
 from .ui.camera_view import CameraView
 from .ui.effects import Effects
-from .ui.menu import Button, Menu, Pointers, draw_button, update_buttons
+from .ui.menu import Button, Menu, Pointers, draw_button, lock_under_pointers, update_buttons
 from .ui.loading import Loading, draw_loading
 from .ui.mic_meter import draw_mic_meter
 from .ui.render import GOLD, PLAYER_COLORS, Renderer
@@ -213,9 +213,20 @@ class App:
             track = self.game.track_for(i)
             if prof and track:
                 apply_to_track(prof, track)
+        # This session's run through each kid's level carries over "Play again".
+        sessions = getattr(self, "sessions", {})
+        for i, name in enumerate(self.args.names):
+            track = self.game.track_for(i)
+            if track is not None:
+                saved = sessions.get(name)
+                if saved and saved[0] == track.level_key:
+                    track.session = saved[1]
+                sessions[name] = (track.level_key, track.session)
+        self.sessions = sessions
         self.game_started = time.time()
         self.over_at = None
         self.saved_final = False
+        self._over_locked = False
         self.round_stars, self.round_totals, self.round_unlocks = {}, {}, {}
         if hasattr(self, "music") and self.state == "playing":
             self.music.play(self.music_mood(), new_round=True)  # alternate game tracks each round
@@ -295,6 +306,7 @@ class App:
 
     def to_menu(self) -> None:
         self.save_progress(finished=True)
+        self.sessions = {}  # a new session starts from the menu
         self.menu.reset()
         self.state = "menu"
 
@@ -753,6 +765,11 @@ class App:
             elif k == "tag_wrong":
                 fx.float_text("Your buddy punches!", ev.x, max(ev.y, self.size[1] * 0.5), (255, 220, 150),
                               r.pop_font, life=1.2)
+            elif k == "speed":
+                lane = ev.lane
+                cx = (lane.x0 + lane.x1) / 2
+                fx.float_text("Faster!" if ev.text == "faster" else "Slowing down", cx, r.hud_height + 50,
+                              (255, 200, 90) if ev.text == "faster" else (150, 210, 255), r.pop_font, life=1.4)
             elif k == "vanish":
                 fx.sparkle(ev.x, ev.y, GOLD, 14)
             elif k == "lane_done":
@@ -899,7 +916,11 @@ class App:
                                                 "Menu", "", (90, 100, 160)))
         if now - (self.over_at or now) < 1.5:
             return  # let the results sink in before buttons react
-        fired = update_buttons(self.over_buttons, self._pointers(), dt)
+        ptr = self._pointers()
+        if not getattr(self, "_over_locked", False):
+            lock_under_pointers(self.over_buttons, ptr)  # buttons appearing under a hand don't fire
+            self._over_locked = True
+        fired = update_buttons(self.over_buttons, ptr, dt)
         if fired and fired.key == "again":
             self.save_progress(finished=True)
             self.new_game()

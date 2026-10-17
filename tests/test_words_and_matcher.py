@@ -125,7 +125,8 @@ def test_user_alias_saved_and_loaded(tmp_path):
 
 
 def test_grade_levels_through_high_school(bank):
-    keys = ["g2a", "g2b", "g3a", "g3b", "g4", "g5", "g6", "g7", "g8", "g9", "g10", "g11", "g12"]
+    keys = ["g2a", "g2b", "g3a", "g3b", "g4", "g5", "g6", "g7", "g8", "g9", "g10", "g11", "g12",
+            "college", "masters", "doctorate"]
     assert bank.order[-len(keys):] == keys
     seen = {}
     for k in bank.order:

@@ -46,3 +46,22 @@ def test_buttons_dont_overlap(menu):
         for i, a in enumerate(hb):
             for b in hb[i + 1:]:
                 assert not a.rect.colliderect(b.rect), (a.label, b.label)
+
+
+def test_buttons_popping_up_under_a_palm_dont_fire(menu):
+    from word_punch.ui.menu import Pointers
+    menu.screen = "who"
+    menu._built_for = None
+    btn = next(b for b in menu._who_buttons() if b.key == "next")
+    palm = Pointers(hands=[btn.rect.center], palms=[btn.rect.center], mode="palm", hold_s=0.4)
+    t = 100.0
+    for _ in range(90):  # 3 s with an open palm parked where "Let's go!" appears
+        t += 1 / 30
+        assert menu.step(1 / 30, t, palm, []) is None
+        assert menu.screen == "who", "the button under the palm fired by itself"
+    away = Pointers(hands=[(5, 700)], mode="palm", hold_s=0.4)
+    menu.step(1 / 30, t, away, [])                    # hand moves off: unlocked
+    for _ in range(20):                               # then a deliberate palm selects it
+        t += 1 / 30
+        menu.step(1 / 30, t, palm, [])
+    assert menu.screen == "game"

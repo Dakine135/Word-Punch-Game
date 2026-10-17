@@ -78,7 +78,7 @@ read_missed = true       # read a word aloud when it's missed
 
 [rules]
 lives = 3                # per lane in split mode, shared in co-op / competitive
-round_end = "words"      # "words" = after round_words words, "time" = after round_minutes,
+round_end = "time"       # "time" = after round_minutes, "words" = after round_words words,
                          # "level" = when the level is mastered, "lives" = until lives run out
 round_words = 15         # per kid (co-op: per kid, added together; race: first to this many wins)
 round_minutes = 3
@@ -86,7 +86,8 @@ style = "punch"          # "punch" = fist rockets, "slice" = swipe through the w
 powerups = true          # golden (x2), freeze (5 s) and giant (10 s) words
 powerup_chance = 0.12
 gentle = false           # true = no lives; missed words bounce back and get read aloud
-mastery_hits = 2         # each word read this many times (fast enough) -> next level
+mastery_hits = 2         # read every word on the level this many times in one session, without
+                         # losing a life -> the profile moves up a level
 mastery_read_s = 4.0     # a read only counts toward mastery if it's this fast
 review_chance = 0.25     # chance a word comes from earlier levels (review)
 review_depth = 3         # review only from this many levels just before the current one
@@ -102,7 +103,8 @@ min_interval = 1.2
 max_interval = 5.0
 max_on_screen = 3        # per lane
 unlocked_slowdown = 0.4  # unlocked words fall at this fraction of speed (time to punch)
-fast_read_s = 2.0        # reads faster than this speed the game up
+fast_read_s = 2.0        # reads faster than this (average of the last few) speed the game up
+slow_read_s = 4.5        # reads slower than this slow it down
 ramp_up = 1.08
 ease_down = 0.88
 

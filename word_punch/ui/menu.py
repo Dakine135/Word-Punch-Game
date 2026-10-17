@@ -73,8 +73,10 @@ def update_buttons(buttons: list[Button], ptr: Pointers, dt: float) -> Button | 
         # with a fist looks just like an upward punch.
         if ptr.mode != "palm" and any(b.rect.collidepoint(p) for p in ptr.punches):
             fired = b
+        present = bool(inside) or b.pointed or b.mouse_over
+        if not present:
+            b.latched = False  # unlocks only once the hand has really moved off the button
         if not inside:
-            b.latched = False
             b.hover = max(0.0, b.hover - dt * 2)
             continue
         if b.latched:
@@ -152,10 +154,18 @@ HINTS = {
 }
 
 
+def lock_under_pointers(buttons: list[Button], ptr: Pointers) -> None:
+    """Lock buttons that appear under a hand or palm; they unlock when it moves away."""
+    for b in buttons:
+        if any(b.rect.collidepoint(p) for p in ptr.hands + ptr.palms):
+            b.latched, b.hover = True, 0.0
+
+
 class Menu:
     """Owns the start screens. step() returns a start request when it's time to play."""
 
     select_mode = "palm"
+    SETTLE_S = 0.5  # after a screen change, nothing fills for this long
 
     def __init__(self, renderer: Renderer, size: tuple[int, int], store: ProfileStore, bank: WordBank,
                  gentle: bool = False, max_players: int = 3, style: str = "punch"):
@@ -328,8 +338,22 @@ class Menu:
             buttons = self._game_buttons()
         else:
             buttons = self._who_buttons() if self.screen == "who" else self._mode_buttons()
+        new_screen = self.screen != getattr(self, "_built_for", None)
+        if new_screen:
+            # Buttons that pop up right under a hand must not fire: lock them until the hand
+            # moves off, and let nothing fill for a moment.
+            self._built_for = self.screen
+            self._settle_until = now + self.SETTLE_S
+            self._buttons = []
+            lock_under_pointers(buttons, ptr)
         self._carry_hover(buttons)
+        settling = now < getattr(self, "_settle_until", 0.0)
         fired = update_buttons(buttons, ptr, dt)
+        if settling:
+            for b in buttons:
+                b.hover = 0.0
+            if fired and not any(fired.rect.collidepoint(c) for c in ptr.clicks):
+                fired = None  # (a mouse click still works right away)
         self._buttons = buttons
         if not fired:
             return None

@@ -443,7 +443,7 @@ class Game:
         self.words.remove(w)
         lane = w.lane
         lane.broken += 1
-        lane.difficulty.on_hit(w.read_time)
+        self._speed_changed(lane, lane.difficulty.on_hit(w.read_time), now)
         reader = w.track.owner if w.track.owner is not None else player
         self._stat(reader, w.text, "read")
         self._stat(reader, w.text, "time", w.read_time)
@@ -485,11 +485,22 @@ class Game:
             self.winner = max(range(len(self.players)), key=lambda i: self.players[i].score)
         self.events.append(Event("gameover", text=self.result))
 
+    def _speed_changed(self, lane, change: int, now: float) -> None:
+        """Tell the kids when the pace shifts (at most every few seconds)."""
+        if not change:
+            return
+        lane.speed_trend = getattr(lane, "speed_trend", 0) + change
+        if now - getattr(lane, "speed_said", -99.0) >= 6.0 and abs(lane.speed_trend) >= 2:
+            self.events.append(Event("speed", lane=lane, text="faster" if lane.speed_trend > 0 else "slower"))
+            lane.speed_said, lane.speed_trend = now, 0
+
     def _word_hit_floor(self, w: FallingWord, now: float) -> None:
         lane = w.lane
         w.track.record_miss(w.text)
         self._stat(w.track.owner, w.text, "missed")
-        lane.difficulty.on_miss()
+        for t in lane.tracks:
+            t.lost_life()  # (gentle mode too: a word got away)
+        self._speed_changed(lane, lane.difficulty.on_miss(), now)
         for i in lane.players:
             self.players[i].combo = 0
         if lane.lives is None:

@@ -154,12 +154,32 @@ def test_level_up_after_mastery(bank):
     assert track.level_up() and track.level_key == "k2"
 
 
-def test_slow_reads_dont_count_toward_mastery(bank):
-    rules = dict(BASE_CFG["rules"], mastery_hits=1)
-    track = Track(bank, "k1", rules)
-    for w in ["the", "is"]:
-        track.record_hit(w, "k1", 9.0)
-    assert not track.mastered()
+def test_level_up_needs_every_word_twice_without_losing_a_life(bank):
+    rules = dict(BASE_CFG["rules"], mastery_hits=2)
+    track = Track(bank, "k1", rules)                 # "the", "is"
+    for w in ["the", "is", "the"]:
+        assert not track.record_hit(w, "k1", 9.0)    # slow reads count too
+    track.lost_life()                                # a word got away: start over
+    for w in ["is", "the", "is"]:
+        assert not track.record_hit(w, "k1", 1.0)
+    assert track.record_hit("the", "k1", 1.0)        # every word twice, no life lost
+    assert track.progress() == 1.0
+
+
+def test_losing_a_life_in_the_game_resets_the_run(bank):
+    g = make_game(bank, mode="coop", levels=("k2",), lives=5, round_end="lives")
+    run(g, 2)
+    g.lanes[0].tracks[0].session["to"] = 2
+    run(g, 40)                                       # words fall and cost lives
+    assert sum(g.lanes[0].tracks[0].session.values()) == 0
+
+
+def test_difficulty_slows_for_slow_readers():
+    d = Difficulty(dict(BASE_CFG["difficulty"], start_fall=0.08))  # (not your settings.toml speed)
+    start = d.fall
+    for _ in range(5):
+        d.on_hit(7.0)
+    assert d.fall < start
 
 
 def test_letter_mastery_is_case_insensitive(bank):

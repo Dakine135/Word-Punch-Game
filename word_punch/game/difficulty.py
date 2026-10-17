@@ -1,4 +1,6 @@
-"""Adaptive speed: quick, accurate reading speeds a lane up; misses ease it off."""
+"""Adaptive speed: the game settles at each kid's reading pace.
+
+Quick reads speed a lane up, slow reads and misses ease it off."""
 from __future__ import annotations
 
 from collections import deque
@@ -16,19 +18,29 @@ class Difficulty:
         self.fall = self.cfg["start_fall"]
         self.interval = self.cfg["start_interval"]
 
-    def on_hit(self, read_time: float) -> None:
+    def on_hit(self, read_time: float) -> int:
+        """Returns +1 if this sped things up, -1 if it slowed them down, 0 otherwise."""
         self.recent_reads.append(read_time)
-        if len(self.recent_reads) >= 3 and sum(self.recent_reads) / len(self.recent_reads) < self.cfg["fast_read_s"]:
-            self._scale(self.cfg["ramp_up"])
+        if len(self.recent_reads) < 3:
+            return 0
+        avg = sum(self.recent_reads) / len(self.recent_reads)
+        if avg < self.cfg["fast_read_s"]:
+            return self._scale(self.cfg["ramp_up"])
+        if avg > self.cfg.get("slow_read_s", 4.5):
+            return -self._scale(1 / self.cfg["ramp_up"])
+        return 0
 
-    def on_miss(self) -> None:
+    def on_miss(self) -> int:
         self.recent_reads.clear()
-        self._scale(self.cfg["ease_down"])
+        return -self._scale(self.cfg["ease_down"])
 
-    def _scale(self, f: float) -> None:
+    def _scale(self, f: float) -> int:
+        """Returns 1 if the speed actually changed (not already at the limit)."""
         c = self.cfg
+        before = self.fall
         self.fall = min(c["max_fall"], max(c["min_fall"], self.fall * f))
         self.interval = min(c["max_interval"], max(c["min_interval"], self.interval / f))
+        return 1 if abs(self.fall - before) > 1e-9 else 0
 
     @property
     def level_pct(self) -> float:

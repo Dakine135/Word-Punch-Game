@@ -168,7 +168,9 @@ class WhackGame(Game):
         self.words.remove(w)
         w.track.record_miss(w.text)
         self._stat(w.track.owner, w.text, "missed")
-        lane.difficulty.on_miss()
+        for t in lane.tracks:
+            t.lost_life()
+        self._speed_changed(lane, lane.difficulty.on_miss(), now)
         for i in lane.players:
             self.players[i].combo = 0
         if lane.lives is None:

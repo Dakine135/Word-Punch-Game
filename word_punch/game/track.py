@@ -23,6 +23,9 @@ class Track:
     rules: dict
     owner: int | None = None  # player index, or None for a shared track
     finished: bool = False   # mastered a level during this round ("level" round goal)
+    # Reads of each current-level word this session (Play again keeps it; losing a life or the
+    # menu clears it). Every word read `mastery_hits` times -> next level.
+    session: Counter = field(default_factory=Counter)
     good: Counter = field(default_factory=Counter)    # fast reads at the current level
     misses: Counter = field(default_factory=Counter)  # misses ever (weights spaced repetition)
 
@@ -67,21 +70,27 @@ class Track:
         if level_key != self.level_key:
             return False  # a review word
         if read_time <= self.rules["mastery_read_s"]:
-            self.good[self._key(text)] += 1
+            self.good[self._key(text)] += 1  # fast reads, kept for the parent report
+        self.session[self._key(text)] += 1
         return self.mastered()
+
+    def lost_life(self) -> None:
+        """A word got away: the clean run through the level starts over."""
+        self.session.clear()
 
     def record_miss(self, text: str) -> None:
         self.misses[text] += 1
 
     def mastered(self) -> bool:
+        """Every word on the level read `mastery_hits` times this session, no lives lost."""
         need = self.rules["mastery_hits"]
         keys = {self._key(w) for w in self.level.words}
-        return all(self.good[k] >= need for k in keys)
+        return all(self.session[k] >= need for k in keys)
 
     def progress(self) -> float:
         need = self.rules["mastery_hits"]
         keys = {self._key(w) for w in self.level.words}
-        return sum(min(self.good[k], need) for k in keys) / (need * len(keys))
+        return sum(min(self.session[k], need) for k in keys) / (need * len(keys))
 
     def level_up(self) -> bool:
         nxt = self.bank.next_level(self.level_key)
@@ -89,4 +98,5 @@ class Track:
             return False
         self.level_key = nxt
         self.good.clear()
+        self.session.clear()
         return True

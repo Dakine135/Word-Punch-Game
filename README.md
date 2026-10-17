@@ -5,15 +5,18 @@ A reading game: sight words (or letters) fall from the sky over a mirrored camer
 
 - Offline speech recognition (Vosk), listening only for the words in play
 - Pose tracking (MediaPipe) for up to 3 players
-- School sight-word lists, K and 1st grade, Q1–Q4 (`word_punch/data/words.toml`), plus letters
+- School sight-word lists, K and 1st grade, Q1–Q4 (`word_punch/data/words.toml`), plus letters,
+  grade 2–12 vocabulary, and College, Master's and Doctorate levels
 - Three modes:
   - **split**: a lane per kid, each at their own level
   - **coop**: one shared sky with both kids' words mixed in
   - **competitive**: the same words for everyone, and the first punch scores
 - Scoring: harder words, faster reading and faster punching earn more points, plus combos
-- Speed adapts to how fast the kids read, and the level goes up once every word is mastered
+- Speed adapts both ways: quick reads speed it up, slow reads and misses slow it down
+- Level up: read every word on the level twice in one session (Play again keeps the run)
+  without losing a life, and the profile moves to the next level
 - Lives (default) or `--gentle`: no game over, and missed words come back
-- **Round goals** (Settings): after N words, after N minutes, or when the level is mastered;
+- **Round goals** (Settings): after N minutes (default 3), after N words, or when the level is mastered;
   the race mode is first to the goal. Each side shows "Finished!", then "Round complete!"
 - **Punch or Slice**: rocket punches, or swipe through words Fruit-Ninja style (picked on the
   mode screen; mouse drag slices in `--sim`)
@@ -77,7 +80,7 @@ python -m word_punch --game boss --mode coop --player Sam:k3 --player Max:letter
 python -m word_punch.report   # parent progress report
 ```
 
-**Levels:** `letters k1 k2 k3 k4 g1q1 g1q2 g1q3 g1q4 g2a g2b g3a g3b g4 g5 g6 g7 g8 g9 g10 g11 g12`
+**Levels:** `letters k1 k2 k3 k4 g1q1 g1q2 g1q3 g1q4 g2a g2b g3a g3b g4 g5 g6 g7 g8 g9 g10 g11 g12 college masters doctorate`
 
 **Keys:**
 
@@ -127,7 +130,7 @@ Copy any section of `word_punch/default_settings.toml` into a `settings.toml` at
 |---|---|
 | `[punch] min_rise` / `min_speed` | How big and fast a punch must be |
 | `[difficulty] start_fall` | Starting speed |
-| `[rules] mastery_hits` | Reads needed per word before the level goes up |
+| `[rules] mastery_hits` | Times through every word (one session, no lives lost) to level up |
 | `[speech] device` | Which mic to use |
 | `[camera] index` | Which camera to use |
 
