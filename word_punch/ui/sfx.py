@@ -57,9 +57,9 @@ class Sfx:
         try:
             if not pygame.mixer.get_init():
                 pygame.mixer.init(RATE, -16, 2, 512)
-            # channel 0 = music, 1 = voice; effects never steal them
+            # channels 0 and 2 = music (crossfade), 1 = voice; effects never steal them
             pygame.mixer.set_num_channels(16)
-            pygame.mixer.set_reserved(2)
+            pygame.mixer.set_reserved(3)
             self.sounds = {
                 # bright two-note chime: you read it!
                 "unlock": _sound(np.concatenate([_tone([880, 1320], 0.09, 0.08),

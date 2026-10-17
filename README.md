@@ -160,3 +160,11 @@ Copy any section of `word_punch/default_settings.toml` into a `settings.toml` at
 - [x] GPU models: YOLO11-pose, Whisper second opinion (Pi plan dropped)
 
 Font: [Andika](https://software.sil.org/andika/) by SIL International (OFL), designed for beginning readers.
+
+Music (all CC0 / public domain, from OpenGameArt.org, downloaded by `tools/fetch_models.py`):
+[Happy Clappy Loop](https://opengameart.org/content/happy-clappy-loop) (menus),
+[The Arplands](https://opengameart.org/content/the-arplands) by LordZintick and
+[Happy Adventure](https://opengameart.org/content/happy-adventure-loop) by TinyWorlds (games),
+[Boss Fight Bounce](https://opengameart.org/content/boss-fight-bounce) by Locomule (boss battle),
+[8 Bit Concentration Loop](https://opengameart.org/content/8-bit-concentration-loop) by cosmac
+(Catch the Word, Sentence Builder). Thank you!

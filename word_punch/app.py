@@ -20,7 +20,7 @@ from .ui.mic_meter import draw_mic_meter
 from .ui.render import GOLD, PLAYER_COLORS, Renderer
 from .ui.settings import SettingsScreen
 from .ui.skeleton import SkeletonLayer
-from .ui.music import Music
+from .ui.music import MusicBox
 from .ui.sfx import Sfx
 from .vision.smoothing import PoseSmoother
 from .voice import Voice, spoken
@@ -95,8 +95,8 @@ class App:
         self.sfx = Sfx()
         self.sfx.set_volume(cfg["game"].get("volume", 100))
         self.voice = Voice(cfg["voice"])
-        self.music = Music(cfg["game"].get("music", 35))
-        self.music.play()
+        self.music = MusicBox(cfg["game"].get("music", 35))
+        self.music.play("menu")
         self._ducked = False
         self.round_stars: dict = {}
         self.round_totals: dict = {}
@@ -209,6 +209,8 @@ class App:
         self.over_at = None
         self.saved_final = False
         self.round_stars, self.round_totals, self.round_unlocks = {}, {}, {}
+        if hasattr(self, "music") and self.state == "playing":
+            self.music.play(self.music_mood(), new_round=True)  # alternate game tracks each round
         self.prepare_voice()
         self.over_buttons = []
         if self.speech:
@@ -248,6 +250,11 @@ class App:
             pose = rewards.head_pose(person, self.view.to_screen)
             if pose:
                 rewards.draw_hat(surf, prof.hat, *pose)
+
+    def music_mood(self) -> str:
+        if self.state == "menu":
+            return "menu"
+        return {"boss": "boss", "catch": "calm", "sentence": "calm"}.get(self.game.kind, "game")
 
     def prepare_voice(self) -> None:
         """Make sure every word that can appear this game has a voice clip (background)."""
@@ -873,6 +880,7 @@ class App:
                     break
                 self.apply_restarts(now)
                 self.voice.update()
+                self.music.play(self.music_mood())
                 if self.voice.speaking() != self._ducked:
                     self._ducked = self.voice.speaking()
                     self.music.set_volume(self.cfg["game"].get("music", 35), duck=self._ducked)

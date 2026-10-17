@@ -19,6 +19,22 @@ POSE = {
 }
 YOLO_URL = "https://github.com/ultralytics/assets/releases/download/v8.3.0/{}"
 YOLO_POSE = ["yolo11n-pose.pt", "yolo11s-pose.pt", "yolo11m-pose.pt", "yolo11l-pose.pt", "yolo11x-pose.pt"]
+# Background music: CC0 (public domain) tracks from OpenGameArt.org.
+MUSIC_DIR = ROOT / "assets" / "music"
+MUSIC = {  # local file: (url, title, artist, page)
+    "menu_happy_clappy.wav": ("https://opengameart.org/sites/default/files/HappyClappyLoop.wav",
+                              "Happy Clappy Loop", "(see page)", "https://opengameart.org/content/happy-clappy-loop"),
+    "game_arplands.ogg": ("https://opengameart.org/sites/default/files/the_arplands_0.ogg",
+                          "The Arplands", "LordZintick", "https://opengameart.org/content/the-arplands"),
+    "game_happy_adventure.mp3": ("https://opengameart.org/sites/default/files/happy_adveture.mp3",
+                                 "Happy Adventure (Loop)", "TinyWorlds",
+                                 "https://opengameart.org/content/happy-adventure-loop"),
+    "boss_fight_bounce.mp3": ("https://opengameart.org/sites/default/files/Boss%20Fight%20Bounce.mp3",
+                              "Boss Fight Bounce", "Locomule", "https://opengameart.org/content/boss-fight-bounce"),
+    "calm_concentration.mp3": ("https://opengameart.org/sites/default/files/game_3.mp3",
+                               "8 Bit Concentration Loop", "cosmac",
+                               "https://opengameart.org/content/8-bit-concentration-loop"),
+}
 VOICE = "en_US-lessac-medium"  # Piper voice for reading words aloud
 VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/"
 VOSK_MODELS = ["vosk-model-small-en-us-0.15",    # fast (Raspberry Pi)
@@ -61,6 +77,13 @@ def main() -> int:
         dest = MODELS / f"{VOICE}{ext}"
         if not dest.exists():
             download(VOICE_URL + f"{VOICE}{ext}", dest)
+    MUSIC_DIR.mkdir(parents=True, exist_ok=True)
+    credits = ["Background music - all CC0 (public domain) from OpenGameArt.org. Thank you!", ""]
+    for name, (url, title, artist, page) in MUSIC.items():
+        if not (MUSIC_DIR / name).exists():
+            download(url, MUSIC_DIR / name)
+        credits.append(f"{name}: \"{title}\" by {artist} - {page} - CC0")
+    (MUSIC_DIR / "CREDITS.txt").write_text("\n".join(credits) + "\n", encoding="utf-8")
     print("models ready in", MODELS)
     return 0
 

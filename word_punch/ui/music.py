@@ -94,3 +94,81 @@ class Music:
         self.volume = percent
         if self.ok:
             self.channel.set_volume(percent / 100 * (0.35 if duck else 1.0))
+
+
+# ---- real tracks (assets/music, downloaded by tools/fetch_models.py) ---------------------
+
+from pathlib import Path  # noqa: E402
+
+MUSIC_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "music"
+PLAYLISTS = {  # mood -> files (a list alternates between rounds)
+    "menu": ["menu_happy_clappy.wav"],
+    "game": ["game_arplands.ogg", "game_happy_adventure.mp3"],
+    "boss": ["boss_fight_bounce.mp3"],
+    "calm": ["calm_concentration.mp3"],  # catch the word / sentence builder: listening & thinking
+}
+MUSIC_CHANNELS = (0, 2)  # reserved in Sfx (1 is the voice); two so tracks can crossfade
+
+
+class MusicBox:
+    """Looping background tracks by mood, crossfading when the mood changes.
+
+    Falls back to the synthesized loop (Music) if the files aren't there."""
+
+    FADE_MS = 900
+
+    def __init__(self, volume: int = 35):
+        self.volume = volume
+        self.ok = False
+        self.mood = None
+        self.round = 0
+        self.ducked = False
+        self._sounds: dict[str, pygame.mixer.Sound] = {}
+        self._active = 0
+        self.fallback = None
+        if not pygame.mixer.get_init():
+            return
+        if not all((MUSIC_DIR / f).exists() for files in PLAYLISTS.values() for f in files):
+            self.fallback = Music(volume)
+            return
+        self.channels = [pygame.mixer.Channel(i) for i in MUSIC_CHANNELS]
+        self.ok = True
+
+    def _sound(self, name: str) -> pygame.mixer.Sound:
+        if name not in self._sounds:
+            self._sounds[name] = pygame.mixer.Sound(str(MUSIC_DIR / name))
+        return self._sounds[name]
+
+    def play(self, mood: str, new_round: bool = False) -> None:
+        """Switch to a mood ("menu", "game", "boss", "calm"); no-op if it's already playing."""
+        if self.fallback:
+            self.fallback.play()
+            return
+        if not self.ok or (mood == self.mood and not new_round):
+            return
+        if new_round:
+            self.round += 1
+        files = PLAYLISTS.get(mood, PLAYLISTS["game"])
+        name = files[self.round % len(files)]
+        if mood == self.mood and len(files) == 1:
+            return
+        self.mood = mood
+        old = self.channels[self._active]
+        self._active = 1 - self._active
+        new = self.channels[self._active]
+        old.fadeout(self.FADE_MS)
+        try:
+            new.play(self._sound(name), loops=-1, fade_ms=self.FADE_MS)
+        except pygame.error as e:
+            print(f"music: {e}")
+        self._apply_volume()
+
+    def _apply_volume(self) -> None:
+        if self.ok:
+            self.channels[self._active].set_volume(self.volume / 100 * (0.35 if self.ducked else 1.0))
+
+    def set_volume(self, percent: int, duck: bool = False) -> None:
+        self.volume, self.ducked = percent, duck
+        if self.fallback:
+            self.fallback.set_volume(percent, duck)
+        self._apply_volume()
