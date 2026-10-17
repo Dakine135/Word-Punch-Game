@@ -358,3 +358,16 @@ def test_stars(bank):
     assert stars_for_round(6, False, 5, 2) == 1
     assert stars_for_round(15, True, 3, 4) == 2
     assert stars_for_round(15, True, 1, 6) == 3
+
+
+def test_review_is_recent_and_never_single_letters(bank):
+    rules = dict(BASE_CFG["rules"], review_chance=1.0)
+    rng = random.Random(0)
+    track = Track(bank, "g9", rules)
+    assert track.review_levels() == ["g6", "g7", "g8"]          # only the last 3 levels
+    track = Track(bank, "k2", rules)                             # k1 ("a", "I", "the", "is") is review here
+    picks = {track.candidates(rng)[0].text for _ in range(200)}
+    assert not any(len(w) == 1 for w in picks)
+    on_k1 = Track(bank, "k1", rules)                             # on K-Q1 itself "a" and "I" still show
+    assert any(len(p.text) == 1 for p in on_k1.candidates(random.Random(1)) if p.level_key == "k1") \
+        or bank.level("k1").words

@@ -1,8 +1,8 @@
 """Open palm vs fist for menu "clicks" (MediaPipe Gesture Recognizer on zoomed hand crops).
 
-The pose model only finds wrists, not fingers. For each RAISED hand (wrist above its elbow)
-we cut a square around where the hand is - past the wrist, along the forearm - out of the
-full-resolution camera frame and ask the gesture recognizer what it sees. Cropping matters:
+The pose model only finds wrists, not fingers. For each hand we cut a square around where
+the hand is - past the wrist, along the forearm - out of the full-resolution camera frame
+and ask the gesture recognizer what it sees. Cropping matters:
 kids stand a few metres back, so a hand is only ~40 px in the full frame.
 
 Labels from the recognizer: Open_Palm, Closed_Fist, Pointing_Up, Thumb_Up, Thumb_Down,
@@ -17,11 +17,6 @@ import numpy as np
 from .pose_backend import Person
 
 HANDS = (("left_wrist", "left_elbow"), ("right_wrist", "right_elbow"))
-
-
-def raised(person: Person, wrist: str, elbow: str) -> bool:
-    w, e = person.get(wrist, 0.3), person.get(elbow, 0.3)
-    return bool(w and e and w.y < e.y)
 
 
 def hand_box(person: Person, wrist: str, elbow: str, fw: int, fh: int) -> tuple[int, int, int, int] | None:
@@ -55,12 +50,10 @@ class HandGestures:
         self.min_score = min_score
 
     def classify(self, rgb: np.ndarray, person: Person) -> dict[str, tuple[str, float]]:
-        """{wrist name: (gesture, score)} for each raised hand it could read."""
+        """{wrist name: (gesture, score)} for each hand it could read."""
         fh, fw = rgb.shape[:2]
         out = {}
         for wrist, elbow in HANDS:
-            if not raised(person, wrist, elbow):
-                continue
             box = hand_box(person, wrist, elbow, fw, fh)
             if box is None:
                 continue

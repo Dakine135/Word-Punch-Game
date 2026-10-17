@@ -362,7 +362,7 @@ class Renderer:
         return f"{lane.broken}/{game.word_goal(lane)}"
 
     def draw_hand_cursors(self, surface: pygame.Surface, hands: list, now: float) -> None:
-        """Menu cursors on raised hands: an open hand when a palm is seen, a fist otherwise."""
+        """Menu cursors on hands: an open hand when a palm is seen, a fist otherwise."""
         for player, x, y, gesture in hands:
             color = PLAYER_COLORS[player % 3]
             x, y = int(x), int(y)

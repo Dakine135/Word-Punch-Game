@@ -141,9 +141,9 @@ def hint(surface, r: Renderer, text: str) -> None:
 
 
 HINTS = {
-    "palm": {"who": "Raise your hand over your name and OPEN your palm",
-             "any": "Raise your hand over a button and OPEN your palm",
-             "arrows": "Raise your hand over an arrow and open your palm."},
+    "palm": {"who": "Put your hand over your name and OPEN your palm",
+             "any": "Put your hand over a button and OPEN your palm",
+             "arrows": "Put your hand over an arrow and open your palm."},
     "hover": {"who": "Hold your hand on your name (or punch it!)",
               "any": "Hold your hand on a button",
               "arrows": "Hold your hand on the arrows to change."},

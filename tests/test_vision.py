@@ -106,16 +106,17 @@ def test_tracker_new_id_reuses_a_free_slot():
     assert slots[1].track_id == 5 and slots[0].track_id == 1
 
 
-def test_hand_box_and_raised():
-    from word_punch.vision.gestures import hand_box, raised
+def test_hand_box_follows_the_forearm():
+    from word_punch.vision.gestures import hand_box
     from word_punch.vision.pose_backend import Keypoint
     p = person(0.5, wrist_y=0.2, shoulder_y=0.4)
-    p.keypoints["left_elbow"] = Keypoint(0.44, 0.3, 0.9)
-    assert raised(p, "left_wrist", "left_elbow")
+    p.keypoints["left_elbow"] = Keypoint(0.44, 0.3, 0.9)      # hand up
     x0, y0, x1, y1 = hand_box(p, "left_wrist", "left_elbow", 960, 540)
-    assert x1 > x0 and y1 > y0 and y0 < 0.2 * 540  # box reaches above the wrist (where the hand is)
-    p.keypoints["left_elbow"] = Keypoint(0.44, 0.1, 0.9)
-    assert not raised(p, "left_wrist", "left_elbow")
+    assert x1 > x0 and y1 > y0 and y0 < 0.2 * 540             # box reaches above the wrist
+    p = person(0.5, wrist_y=0.7, shoulder_y=0.4)
+    p.keypoints["left_elbow"] = Keypoint(0.44, 0.55, 0.9)     # hand down: box below the wrist
+    x0, y0, x1, y1 = hand_box(p, "left_wrist", "left_elbow", 960, 540)
+    assert y1 > 0.7 * 540
 
 
 def test_palm_mode_buttons_need_open_palm():

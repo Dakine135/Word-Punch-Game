@@ -89,6 +89,7 @@ gentle = false           # true = no lives; missed words bounce back and get rea
 mastery_hits = 2         # each word read this many times (fast enough) -> next level
 mastery_read_s = 4.0     # a read only counts toward mastery if it's this fast
 review_chance = 0.25     # chance a word comes from earlier levels (review)
+review_depth = 3         # review only from this many levels just before the current one
 letters_easy = false     # true = any sound unlocks a lane's only letter (for the littlest)
 rocket_from = "bottom"   # "bottom" = fist rocket launches from the floor at the fist's x; "fist" = from the fist
 

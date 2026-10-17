@@ -600,7 +600,7 @@ class App:
                 continue
             for hand, elbow in (("left_wrist", "left_elbow"), ("right_wrist", "right_elbow")):
                 kp, el = person.get(hand, 0.4), person.get(elbow, 0.3)
-                if kp and el and kp.y < el.y:  # raised hand
+                if kp and el:  # any visible hand points; an open palm selects
                     g, seen = self.hand_gestures.get((s.index, hand), (None, 0.0))
                     x, y = self.view.to_screen(kp.x + (kp.x - el.x) * 0.35, kp.y + (kp.y - el.y) * 0.35)
                     self.menu_hands.append((s.index, x, y, g if now - seen < 0.5 else None))
@@ -825,7 +825,7 @@ class App:
                              unlocks=self.round_unlocks, now=now)
             for b in self.over_buttons:
                 draw_button(surf, r, b, now)
-            how = "Raise a hand over a button and open your palm" if self._gestures_on else "Hold your hand on a button"
+            how = "Put a hand over a button and open your palm" if self._gestures_on else "Hold your hand on a button"
             r.draw_say_hint(surf, how + "   (Enter = play again" + (", M = menu)" if self.args.use_menu else ")"))
             self.draw_menu_hands(surf, now)
 

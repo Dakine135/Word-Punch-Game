@@ -35,9 +35,12 @@ class Track:
         return norm(text) if self.level.is_letters else text
 
     def review_levels(self) -> list[str]:
-        """Earlier word levels (letters never come back as review once you're on words)."""
+        """The few word levels just before this one (letters never come back as review).
+
+        Only recent levels: a 9th grader shouldn't get kindergarten words as review."""
         idx = self.level.index
-        return [k for k in self.bank.order[:idx] if not self.bank.level(k).is_letters]
+        earlier = [k for k in self.bank.order[:idx] if not self.bank.level(k).is_letters]
+        return earlier[-self.rules.get("review_depth", 3):] if earlier else []
 
     def levels_in_play(self) -> list[str]:
         return [self.level_key] + self.review_levels()
@@ -50,6 +53,10 @@ class Track:
             level_key = rng.choice(review)
         lvl = self.bank.level(level_key)
         words = list(lvl.words)
+        if level_key != self.level_key:
+            # Review never shows one-letter words ("a", "I"): single letters belong to the
+            # Letters level (and to K-Q1 itself, where "a" and "I" are taught).
+            words = [w for w in words if len(w) > 1] or words
         # Weighted shuffle: missed words are more likely to come first.
         weights = [1.0 + 2.0 * self.misses[w] for w in words]
         order = sorted(range(len(words)), key=lambda i: rng.random() ** (1.0 / weights[i]), reverse=True)

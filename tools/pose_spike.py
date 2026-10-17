@@ -35,7 +35,7 @@ def main() -> int:
     cfg = config.load()
     vision = VisionService(cfg)
     vision.start()
-    vision.set_gestures(True)  # show open palm / fist on raised hands
+    vision.set_gestures(True)  # show open palm / fist on each hand
 
     pygame.init()
     size = (cfg["game"]["width"], cfg["game"]["height"])
