@@ -1,0 +1,15 @@
+# BoT-SORT for the YOLO pose backend (Ultralytics). Like ByteTrack, plus it remembers what
+# each person looks like (features from the pose model itself - no extra model), so a kid
+# keeps their ID through crossing over, ducking behind someone or a few seconds out of view.
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 90        # frames a lost person is remembered (~3 s at 30 fps; default 30)
+match_thresh: 0.8
+fuse_score: True
+gmc_method: none        # the camera doesn't move: skip camera-motion compensation (saves CPU)
+proximity_thresh: 0.5
+appearance_thresh: 0.8
+with_reid: True
+model: auto             # use the pose model's own features

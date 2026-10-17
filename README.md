@@ -4,7 +4,7 @@ A reading game: sight words (or letters) fall from the sky over a mirrored camer
 **Read the word out loud** and it glows gold. Then **punch up** under it to launch a fist rocket and smash it.
 
 - Offline speech recognition (Vosk), listening only for the words in play
-- Pose tracking (MediaPipe) for up to 3 players
+- Pose tracking (YOLO11-pose on the GPU) for up to 3 players
 - School sight-word lists, K and 1st grade, Q1–Q4 (`word_punch/data/words.toml`), plus letters,
   grade 2–12 vocabulary, and College, Master's and Doctorate levels
 - Three modes:
@@ -51,7 +51,7 @@ Piper, and Whisper in `models/hf`) stay in `models/`.
 
 | Job | Model | Why |
 |---|---|---|
-| Pose | **YOLO11x-pose** (Ultralytics, GPU) | steady (1.3 px/frame wobble vs 9.7 for MediaPipe), finds the player every frame, tracks each kid by ID |
+| Pose | **YOLO11x-pose** (Ultralytics, GPU) | steady (1.3 px/frame wobble vs 9.7 for MediaPipe), finds the player every frame, tracks each kid by ID (BoT-SORT, which also remembers what each person looks like) |
 | Speech | **Vosk en-us-0.22** listening for the on-screen words | fast: reacts while the kid is still talking |
 | Speech, 2nd opinion | **Whisper large-v3-turbo** (GPU) picks the on-screen word | runs when Vosk hears a voice but can't place the word - the kids' main problem |
 | Voice | **Piper** en_US-lessac-medium | reads words aloud |
@@ -100,6 +100,14 @@ python -m word_punch.report   # parent progress report
 | `--letters-easy` | Any sound unlocks the only letter in a lane |
 | `--lives 5` | Change the number of lives |
 
+**Who's playing:** whoever is in view when a round starts are the players, and they keep their
+colours all round. If a kid ducks out or gets lost behind someone, their spot waits for them and
+they win it back by the colour of their clothes. Anyone else who walks in (a grown-up) is drawn
+as a grey skeleton and can't play. The clothes colours are a few numbers kept in memory, never
+saved, and no pictures are kept. In Settings, **Ignore grown-ups** also stops grown-ups from ever
+getting a colour. It works by head size next to shoulders. F3 shows each person's number: kids
+are about 0.6, grown-ups about 0.45.
+
 ## Testing tools
 
 ```bash
@@ -133,6 +141,9 @@ Copy any section of `word_punch/default_settings.toml` into a `settings.toml` at
 | `[rules] mastery_hits` | Times through every word (one session, no lives lost) to level up |
 | `[speech] device` | Which mic to use |
 | `[camera] index` | Which camera to use |
+| `[pose] lock_players` | Only the kids in view at the start of a round play |
+| `[pose] ignore_grownups` / `grownup_ratio` | Never give a grown-up a colour, and the head/shoulder cutoff |
+| `[pose] look_match` | How different clothes must be (0–1) to count as someone else |
 
 ## Hardware
 

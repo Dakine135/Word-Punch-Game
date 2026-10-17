@@ -34,6 +34,7 @@ class Person:
     keypoints: dict[str, Keypoint] = field(default_factory=dict)
     track_id: int | None = None  # same number for the same kid across frames (YOLO tracker)
     gestures: dict = field(default_factory=dict)  # wrist name -> (gesture, score), menus only
+    look: dict | None = None  # clothes colours (appearance.add_looks), to tell players apart
 
     def get(self, name: str, min_vis: float = 0.0) -> Keypoint | None:
         kp = self.keypoints.get(name)
@@ -67,6 +68,8 @@ class Person:
         d["_id"] = self.track_id
         if self.gestures:
             d["_g"] = self.gestures
+        if self.look:
+            d["_a"] = self.look
         return d
 
     @classmethod
@@ -74,7 +77,8 @@ class Person:
         d = dict(d)
         tid = d.pop("_id", None)
         gestures = d.pop("_g", {})
-        return cls({k: Keypoint(*v) for k, v in d.items()}, track_id=tid, gestures=gestures)
+        look = d.pop("_a", None)
+        return cls({k: Keypoint(*v) for k, v in d.items()}, track_id=tid, gestures=gestures, look=look)
 
 
 class PoseBackend(Protocol):

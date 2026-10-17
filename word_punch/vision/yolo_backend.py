@@ -1,4 +1,4 @@
-"""YOLO11-pose on the GPU (Ultralytics), with ByteTrack person IDs.
+"""YOLO11-pose on the GPU (Ultralytics), with BoT-SORT (or ByteTrack) person IDs.
 
 More robust than MediaPipe with two or three kids close together, and the tracker keeps
 the same ID on each kid from frame to frame, so players don't get jumbled when they move
@@ -24,13 +24,15 @@ class YoloBackend:
         self.model = YOLO(str(weights))
         self.imgsz = cfg.get("yolo_imgsz", 640)
         self.conf = cfg.get("yolo_conf", 0.35)
-        self.max_people = cfg.get("max_people", 3)
+        self.max_people = cfg.get("max_people", 5)
+        tracker = cfg.get("tracker", "botsort")
+        self.tracker = str(Path(__file__).with_name("botsort.yaml")) if tracker == "botsort" else "bytetrack.yaml"
         self.device = 0 if _cuda() else "cpu"
         self.half = self.device == 0
 
     def detect(self, rgb: np.ndarray, timestamp_ms: int) -> list[Person]:
         bgr = np.ascontiguousarray(rgb[:, :, ::-1])  # Ultralytics treats arrays as BGR
-        r = self.model.track(bgr, persist=True, tracker="bytetrack.yaml", device=self.device, half=self.half,
+        r = self.model.track(bgr, persist=True, tracker=self.tracker, device=self.device, half=self.half,
                              imgsz=self.imgsz, conf=self.conf, verbose=False)[0]
         if r.keypoints is None or r.boxes is None or not len(r.boxes):
             return []

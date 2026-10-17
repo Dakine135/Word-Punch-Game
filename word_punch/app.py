@@ -152,10 +152,25 @@ class App:
         self.vision = VisionService(self.cfg)
         self.vision.start()
         self.view = CameraView(self.size, (cam["width"], cam["height"]), dim=0.35)
-        self.tracker = Tracker(3)
+        pose = self.cfg["pose"]
+        self.tracker = Tracker(3, ignore_grownups=pose.get("ignore_grownups", False),
+                               grownup_ratio=pose.get("grownup_ratio", 0.53),
+                               look_match=pose.get("look_match", 0.4))
         self.punchers = [PunchDetector(self.cfg["punch"]) for _ in range(3)]
         self.pose_times.clear()
         self.smoother.set_preset(self.cfg["pose"].get("smoothing", "medium"))
+        if getattr(self, "state", None) == "playing" and hasattr(self, "game"):
+            self.lock_players()
+
+    def lock_players(self) -> None:
+        """A round starts: whoever is in view now are the players (held all round)."""
+        if not self.vision or not self.cfg["pose"].get("lock_players", True):
+            return
+        from .vision.punch import PunchDetector
+        self.tracker.lock(len(self.args.names))
+        for i in range(len(self.tracker.slots)):  # slots may have been renumbered
+            self.smoother.drop(i)
+        self.punchers = [PunchDetector(self.cfg["punch"]) for _ in self.tracker.slots]
 
     def start_speech(self) -> None:
         from .speech.service import SpeechService
@@ -178,6 +193,8 @@ class App:
             Menu.select_mode = self.cfg["menu"]["select"]
         elif section == "pose" and key == "smoothing":
             self.smoother.set_preset(self.cfg["pose"]["smoothing"])
+        elif section == "pose" and key in ("ignore_grownups", "grownup_ratio") and self.vision:
+            setattr(self.tracker, key, self.cfg["pose"][key])
         elif section == "game" and key == "music":
             self.music.set_volume(self.cfg["game"]["music"])
         elif section == "game" and key == "volume":
@@ -234,6 +251,8 @@ class App:
         self.over_buttons = []
         if self.speech:
             self._sync_vocab()
+        if self.state == "playing":
+            self.lock_players()
 
     def _profile_of(self, player: int):
         profs = getattr(self, "player_profiles", [])
@@ -303,10 +322,13 @@ class App:
         self.effects = Effects()
         self.new_game()
         self.state = "playing"
+        self.lock_players()
 
     def to_menu(self) -> None:
         self.save_progress(finished=True)
         self.sessions = {}  # a new session starts from the menu
+        if self.vision:
+            self.tracker.unlock()
         self.menu.reset()
         self.state = "menu"
 
@@ -547,7 +569,17 @@ class App:
                 x, _ = self.view.to_screen(person.center_x, 0.5)
                 idx = self.game.lane_at(x).players[0]
             self.skeletons.add(self.view, person, PLAYER_COLORS[idx % 3])
+        for person in self.tracker.extras:  # in view but not playing
+            self.skeletons.add(self.view, person, (150, 150, 160), alpha=80)
         self.skeletons.end(surf)
+        if self.debug:  # head width / shoulder width (the grown-up check), per person
+            for person in [s.person for s in self.tracker.slots if s.person] + self.tracker.extras:
+                head, nose = self.tracker.head_of(person), person.get("nose", 0.3)
+                if head is not None and nose:
+                    x, y = self.view.to_screen(nose.x, nose.y)
+                    tag = " grown-up" if head < self.tracker.grownup_ratio else ""
+                    img = self.renderer.small_font.render(f"head {head:.2f}{tag}", True, (180, 255, 180))
+                    surf.blit(img, (x - img.get_width() // 2, y - 90))
 
     # ---- hooks for tools that extend the game (e.g. tools/punch_playground.py) -------
 

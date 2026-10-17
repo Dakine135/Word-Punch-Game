@@ -24,6 +24,7 @@ from .pose_backend import Person
 def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop, want_gestures=None) -> None:
     import cv2
 
+    from .appearance import add_looks
     from .pose_backend import create_backend
 
     cam_cfg, pose_cfg = cfg["camera"], cfg["pose"]
@@ -114,6 +115,8 @@ def _vision_main(cfg: dict, shm_name: str, seq, out_q: mp.Queue, stop, want_gest
                 if gestures is not None:
                     for p in people[:3]:
                         p.gestures = gestures.classify(frame, p)
+            if people and pose_cfg.get("looks", True):
+                add_looks(frame, people)  # clothes colours: who's who when tracking slips
             out_q.put(("pose", (t, [p.to_wire() for p in people], time.time() - start)))
     finally:
         backend.close()

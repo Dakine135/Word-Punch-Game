@@ -22,7 +22,13 @@ yolo_conf = 0.35
 mediapipe_model = "models/pose_landmarker_full.task"
 smoothing = "low"        # off / low / medium / high - steadier skeletons, hats and hand rings
 gesture_model = "models/gesture_recognizer.task"   # open palm vs fist, for menu clicks
-max_people = 3
+max_people = 5          # people found per frame (the players + anyone walking through)
+tracker = "botsort"     # botsort: also remembers what people look like / bytetrack: older
+lock_players = true     # in a round only the kids there at the start play; anyone else is grey
+ignore_grownups = false # never give a grown-up a player colour (by head size vs shoulders)
+grownup_ratio = 0.53    # head width / shoulder width below this = grown-up (F3 shows each person's)
+look_match = 0.4        # clothes this different (0..1) aren't the same kid
+looks = true            # read clothes colours (numbers only, kept in memory, never saved)
 input_width = 480    # frame is downscaled to this width before pose detection
 min_detection_confidence = 0.5
 min_presence_confidence = 0.5
