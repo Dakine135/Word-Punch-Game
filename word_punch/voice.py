@@ -105,6 +105,10 @@ class Voice:
         self._sounds[text] = s
         return s
 
+    def pending(self) -> int:
+        """Clips still waiting to be generated."""
+        return self._jobs.qsize() if self.enabled else 0
+
     def ready(self, *texts: str) -> bool:
         return all(self.path(t).exists() for t in texts)
 

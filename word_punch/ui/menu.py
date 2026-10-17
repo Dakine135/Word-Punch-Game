@@ -180,14 +180,18 @@ class Menu:
         self.joined = [p for p in self.profiles if p.name in names][: self.max_players]
         self.screen = "who" if self.profiles else "setup"
 
+    # Every hand-picked button sits in the TOP half of the screen: kids reach UP with their
+    # palm facing the camera (a palm turned down to reach low buttons isn't recognised).
+    TOP = 112
+
     def _who_buttons(self) -> list[Button]:
         buttons = []
-        cols, cw, ch, gap = 3, 330, 150, 36
+        cols, cw, ch, gap = 3, 282, 104, 16
         shown = self.profiles[:6]
-        x0 = (self.w - (cols * cw + (cols - 1) * gap)) // 2
+        x0 = 30
         for i, p in enumerate(shown):
             row, col = divmod(i, cols)
-            rect = pygame.Rect(x0 + col * (cw + gap), 170 + row * (ch + 26), cw, ch)
+            rect = pygame.Rect(x0 + col * (cw + gap), self.TOP + row * (ch + gap), cw, ch)
             joined = p in self.joined
             color = PLAYER_COLORS[self.joined.index(p) % 3] if joined else (70, 80, 130)
             sub = self.bank.level(p.level).name + (f"   best {p.best_score}" if p.best_score else "")
@@ -195,11 +199,13 @@ class Menu:
                 sub = f"Player {self.joined.index(p) + 1}  -  " + sub
             buttons.append(Button("player", rect, p.name, sub, color, joined, data=p))
         n = len(self.joined)
-        go = pygame.Rect(self.w // 2 - 200, self.h - 150, 400, 96)
+        right = x0 + cols * (cw + gap) + 14
+        rw = self.w - right - 30
+        go = pygame.Rect(right, self.TOP, rw, 124)
         buttons.append(Button("next", go, "Let's go!" if n else "Pick your name",
-                              f"{n} player{'s' if n != 1 else ''}" if n else "hold your hand on it",
+                              f"{n} player{'s' if n != 1 else ''}" if n else "then come here",
                               (60, 160, 90), enabled=n > 0))
-        buttons.append(Button("closet", pygame.Rect(self.w // 2 - 480, self.h - 150, 250, 96), "Dress up!",
+        buttons.append(Button("closet", pygame.Rect(right, self.TOP + 136, rw, 88), "Dress up!",
                               "hats & colours", (170, 80, 160), enabled=n > 0))
         buttons.append(Button("settings", pygame.Rect(self.w - 150, self.h - 70, 136, 52), "Settings", "",
                               (70, 75, 100), mouse_only=True))
@@ -216,23 +222,24 @@ class Menu:
     }
 
     def _game_buttons(self) -> list[Button]:
-        bw, bh, gap = 360, 150, 30
+        bw, bh, gap = 380, 108, 20
+        x0 = (self.w - (3 * bw + 2 * gap)) // 2
         readers = any(not self.bank.level(p.level).is_letters for p in self.joined)
         buttons = []
         for i, kind in enumerate(KINDS):
             row, col = divmod(i, 3)
-            n_in_row = 3 if row == 0 else len(KINDS) - 3
-            x0 = (self.w - (n_in_row * bw + (n_in_row - 1) * gap)) // 2
             title_, sub, color = self.GAME_INFO[kind]
             ok = readers or kind != "sentence"
-            buttons.append(Button(f"game:{kind}", pygame.Rect(x0 + col * (bw + gap), 170 + row * (bh + 28), bw, bh),
+            buttons.append(Button(f"game:{kind}", pygame.Rect(x0 + col * (bw + gap), self.TOP + row * (bh + 12), bw, bh),
                                   title_, sub if ok else "for readers", color, enabled=ok))
-        buttons.append(Button("back", pygame.Rect(self.w // 2 - 150, self.h - 130, 300, 80), "Back", "", (90, 90, 110)))
+        row, col = divmod(len(KINDS), 3)  # Back takes the next free spot
+        buttons.append(Button("back", pygame.Rect(x0 + col * (bw + gap), self.TOP + row * (bh + 12), bw, bh),
+                              "Back", "", (90, 90, 110)))
         return buttons
 
     def _mode_buttons(self) -> list[Button]:
         n = len(self.joined)
-        bw, bh, gap = 340, 210, 30
+        bw, bh, gap = 340, 120, 30
         names = [p.name for p in self.joined]
         info = {"split": ("Own sides", "your own words"),
                 "coop": ("Team up", "share the sky"),
@@ -244,21 +251,24 @@ class Menu:
         if len(modes) == 4:
             bw, gap = 270, 22
         x0 = (self.w - (len(modes) * bw + (len(modes) - 1) * gap)) // 2
-        buttons = [Button(f"mode:{m}", pygame.Rect(x0 + i * (bw + gap), 190, bw, bh), label, sub,
+        buttons = [Button(f"mode:{m}", pygame.Rect(x0 + i * (bw + gap), self.TOP, bw, bh), label, sub,
                           (200, 120, 40) if m == "competitive" else (60, 120, 200) if m == "coop" else (70, 160, 90))
                    for i, (m, label, sub) in enumerate(modes)]
         bw2, gap2 = 300, 30
         x0 = self.w // 2 - (3 * bw2 + 2 * gap2) // 2
-        buttons.append(Button("style", pygame.Rect(x0, 450, bw2, 90),
+        row2 = self.TOP + bh + 16
+        buttons.append(Button("style", pygame.Rect(x0, row2, bw2, 88),
                               "Slice!" if self.style == "slice" else "Punch!",
                               "swipe through words" if self.style == "slice" else "rocket punches",
                               (200, 70, 90) if self.style == "slice" else (220, 130, 40)))
-        buttons.append(Button("gentle", pygame.Rect(x0 + bw2 + gap2, 450, bw2, 90),
+        buttons.append(Button("gentle", pygame.Rect(x0 + bw2 + gap2, row2, bw2, 88),
                               "No lives" if self.gentle else "Lives",
                               "words come back" if self.gentle else "tap to change",
                               (150, 90, 170), selected=self.gentle))
-        buttons.append(Button("back", pygame.Rect(x0 + 2 * (bw2 + gap2), 450, bw2, 90), "Back", "", (90, 90, 110)))
+        buttons.append(Button("back", pygame.Rect(x0 + 2 * (bw2 + gap2), row2, bw2, 88), "Back", "", (90, 90, 110)))
         return buttons
+
+    CLOSET_HAT_Y, CLOSET_COLOR_Y = 172, 272
 
     def _closet_buttons(self) -> list[Button]:
         n = len(self.joined)
@@ -266,11 +276,10 @@ class Menu:
         buttons = []
         for i, p in enumerate(self.joined):
             cx = int(col * (i + 0.5))
-            for row, kind in ((400, "hat"), (500, "color")):
-                buttons.append(Button(f"{kind}-", pygame.Rect(cx - 190, row, 80, 80), "<", "", (80, 90, 140), data=i))
-                buttons.append(Button(f"{kind}+", pygame.Rect(cx + 110, row, 80, 80), ">", "", (80, 90, 140), data=i))
-        buttons.append(Button("done", pygame.Rect(self.w // 2 - 160, self.h - 128, 320, 72), "Done!", "",
-                              (60, 160, 90)))
+            for row, kind in ((self.CLOSET_HAT_Y, "hat"), (self.CLOSET_COLOR_Y, "color")):
+                buttons.append(Button(f"{kind}-", pygame.Rect(cx - 180, row, 72, 72), "<", "", (80, 90, 140), data=i))
+                buttons.append(Button(f"{kind}+", pygame.Rect(cx + 108, row, 72, 72), ">", "", (80, 90, 140), data=i))
+        buttons.append(Button("done", pygame.Rect(self.w - 190, 20, 170, 74), "Done!", "", (60, 160, 90)))
         return buttons
 
     def _cycle(self, p: Profile, kind: str, step: int) -> None:
@@ -390,20 +399,20 @@ class Menu:
                 draw_button(surface, r, b, now)
             return
         if self.screen == "game":
-            title(surface, r, "Pick a game!", 90)
+            title(surface, r, "Pick a game!", 55)
             hint(surface, r, HINTS[self.select_mode]["any"])
         elif self.screen == "who":
-            title(surface, r, "Who's playing?", 90)
+            title(surface, r, "Who's playing?", 55)
             hint(surface, r, HINTS[self.select_mode]["who"] + "      P = players   S = settings")
         else:
-            title(surface, r, "How do you want to play?", 100)
+            title(surface, r, "How do you want to play?", 55)
             hint(surface, r, HINTS[self.select_mode]["any"] + "      Backspace = back")
         for b in buttons:
             draw_button(surface, r, b, now)
 
     def _draw_closet(self, surface, now) -> None:
         r = self.r
-        title(surface, r, "Dress up!", 70)
+        title(surface, r, "Dress up!", 55)
         hint(surface, r, HINTS[self.select_mode]["arrows"] + " Earn stars to unlock more!")
         n = len(self.joined)
         col = self.w / max(1, n)
@@ -411,33 +420,29 @@ class Menu:
             cx = int(col * (i + 0.5))
             team = PLAYER_COLORS[i % 3]
             name = r.hud_font.render(p.name, True, team)
-            surface.blit(name, name.get_rect(center=(cx, 140)))
-            # star count
+            surface.blit(name, name.get_rect(midright=(cx - 4, 122)))
+            r._star(surface, cx + 22, 122, 15, now)
             s = r.hud_font.render(f"{p.stars}", True, GOLD)
-            surface.blit(s, s.get_rect(midleft=(cx + 14, 182)))
-            r._star(surface, cx - 8, 182, 16, now)
-            # preview head with hat
-            head_y = 300
-            pygame.draw.circle(surface, (235, 195, 165), (cx, head_y), 48)
-            for ex in (-16, 16):
-                pygame.draw.circle(surface, (40, 40, 50), (cx + ex, head_y - 6), 6)
-            pygame.draw.arc(surface, (40, 40, 50), (cx - 18, head_y + 2, 36, 26), 3.5, 5.9, 4)
-            rewards.draw_hat(surface, p.hat, cx, head_y - 42, 100, 0)
-            # hat row
+            surface.blit(s, s.get_rect(midleft=(cx + 42, 122)))
+            # hat row: preview head between the arrows
+            head_y = self.CLOSET_HAT_Y + 46
+            pygame.draw.circle(surface, (235, 195, 165), (cx, head_y), 32)
+            for ex in (-11, 11):
+                pygame.draw.circle(surface, (40, 40, 50), (cx + ex, head_y - 4), 4)
+            rewards.draw_hat(surface, p.hat, cx, head_y - 28, 54, 0)
             lab = r.small_font.render(rewards.item_name(rewards.HATS, p.hat), True, WHITE)
-            surface.blit(lab, lab.get_rect(center=(cx, 440)))
+            surface.blit(lab, lab.get_rect(center=(cx, self.CLOSET_HAT_Y + 86)))
             # colour row: a glove in that colour
             color = rewards.glove_color(p.color, team, now)
-            g = r.glove(color, 70)
-            surface.blit(g, g.get_rect(center=(cx - 40, 540)))
+            g = r.glove(color, 58)
+            surface.blit(g, g.get_rect(center=(cx, self.CLOSET_COLOR_Y + 37)))
             lab = r.small_font.render(rewards.item_name(rewards.COLORS, p.color), True, WHITE)
-            surface.blit(lab, lab.get_rect(midleft=(cx - 5, 540)))
-            # what's next
+            surface.blit(lab, lab.get_rect(center=(cx, self.CLOSET_COLOR_Y + 82)))
             nxt = [x for x in (rewards.next_locked(rewards.HATS, p.stars), rewards.next_locked(rewards.COLORS, p.stars)) if x]
             if nxt:
                 item = min(nxt, key=lambda x: x[2])
                 t = r.small_font.render(f"Next: {item[1]} at {item[2]} stars", True, DIM)
-                surface.blit(t, t.get_rect(center=(cx, 600)))
+                surface.blit(t, t.get_rect(center=(cx, self.CLOSET_COLOR_Y + 118)))
 
     def _draw_countdown(self, surface, now) -> None:
         r = self.r

@@ -501,12 +501,12 @@ class Renderer:
         else:
             text = "Game Over!"
         title = self._text(text, self.big_font, GOLD)
-        surface.blit(title, title.get_rect(center=(self.w // 2, int(self.h * 0.2))))
+        surface.blit(title, title.get_rect(center=(self.w // 2, int(self.h * 0.1))))
         ranked = sorted(game.players, key=lambda p: -p.score)
         for i, p in enumerate(ranked):
             words = "word" if p.broken == 1 else "words"
             line = f"{p.name}:  {p.score} points   {p.broken} {words}   best combo x{p.best_combo}"
-            y = int(self.h * (0.36 + 0.11 * i))
+            y = int(self.h * (0.5 + 0.11 * i))
             t = self._text(line, self.hud_font, PLAYER_COLORS[p.index % 3])
             if stars is not None and p.index in stars:
                 rect = t.get_rect(midright=(self.w // 2 + 260, y))

@@ -16,6 +16,7 @@ from .ui import display
 from .ui.camera_view import CameraView
 from .ui.effects import Effects
 from .ui.menu import Button, Menu, Pointers, draw_button, update_buttons
+from .ui.loading import Loading, draw_loading
 from .ui.mic_meter import draw_mic_meter
 from .ui.render import GOLD, PLAYER_COLORS, Renderer
 from .ui.settings import SettingsScreen
@@ -103,6 +104,7 @@ class App:
         self.round_unlocks: dict = {}
         self.debug = args.debug or cfg["game"].get("debug", False)
         self.pending_restart: dict[str, float] = {}
+        self.loading = Loading()
         self.skeletons = SkeletonLayer(self.size)
         self.blades: dict = {}        # (who, hand) -> deque[(t, x, y, player)] trail points
         self.hand_gestures: dict = {} # (slot, wrist) -> (gesture, time seen)
@@ -491,6 +493,28 @@ class App:
             return None
         return self.smoother.at(slot.index, now if now is not None else time.time()) or slot.person
 
+    def loading_rows(self, now: float) -> list[tuple[str, float, str]] | None:
+        """What's still starting up (for the 'Getting ready...' panel), or None when all done."""
+        keys, rows = [], []
+        if self.vision:
+            ready = len(self.pose_times) > 0 or bool(self.vision.error)
+            self.loading.mark("vision", ready, now)
+            keys.append("vision")
+            rows.append(("Body tracking", self.loading.progress("vision", now),
+                         "error" if self.vision.error else "camera + pose model"))
+        if self.speech:
+            ready = self.speech.ready or bool(self.speech.error)
+            self.loading.mark("speech", ready, now)
+            keys.append("speech")
+            rows.append(("Listening", self.loading.progress("speech", now),
+                         "error" if (self.speech.error and not self.speech.ready) else "speech models"))
+        left = self.voice.pending()
+        if left:
+            rows.append(("Game voice", 0.5, f"{left} words left"))
+        if not rows or (not left and not self.loading.visible(keys, now)):
+            return None
+        return rows
+
     def draw_menu_hands(self, surf: pygame.Surface, now: float) -> None:
         if self._gestures_on:
             self.renderer.draw_hand_cursors(surf, self.menu_hands, now)
@@ -766,6 +790,9 @@ class App:
             self.draw_skeletons(surf)
             self.draw_hats(surf)
             self.menu.draw(surf, now)
+            rows = self.loading_rows(now)
+            if rows and self.menu.screen in ("who", "game", "mode"):
+                draw_loading(surf, r, rows, now)
             self.draw_menu_hands(surf, now)
             self.effects.draw(surf)
             if self.debug:
@@ -861,11 +888,13 @@ class App:
     def step_game_over(self, dt: float, now: float) -> None:
         if not self.over_buttons:
             w, h = self.size
+            # top half: kids reach up with the palm facing the camera
+            top = int(h * 0.19)
             again_x = w // 2 - 380 if self.args.use_menu else w // 2 - 180
-            self.over_buttons = [Button("again", pygame.Rect(again_x, int(h * 0.7), 360, 100),
+            self.over_buttons = [Button("again", pygame.Rect(again_x, top, 360, 96),
                                         "Play again", "", (60, 160, 90))]
             if self.args.use_menu:
-                self.over_buttons.append(Button("menu", pygame.Rect(w // 2 + 20, int(h * 0.7), 360, 100),
+                self.over_buttons.append(Button("menu", pygame.Rect(w // 2 + 20, top, 360, 96),
                                                 "Menu", "", (90, 100, 160)))
         if now - (self.over_at or now) < 1.5:
             return  # let the results sink in before buttons react
