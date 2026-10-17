@@ -132,3 +132,14 @@ def test_palm_mode_buttons_need_open_palm():
     for _ in range(20):
         fired = fired or update_buttons([b], palm, 1 / 30)
     assert fired is b                                           # open palm selects (~0.4 s)
+
+
+def test_palm_mode_ignores_fists_and_punches():
+    import pygame
+    from word_punch.ui.menu import Button, Pointers, update_buttons
+    b = Button("go", pygame.Rect(0, 0, 100, 100), "Go")
+    fist_punch = Pointers(hands=[(50, 50)], punches=[(50, 50)], mode="palm", hold_s=0.4)
+    for _ in range(60):
+        assert update_buttons([b], fist_punch, 1 / 30) is None  # a fist punched up to it: nothing
+    hover_mode = Pointers(hands=[(50, 50)], punches=[(50, 50)], mode="hover")
+    assert update_buttons([Button("x", pygame.Rect(0, 0, 100, 100), "X")], hover_mode, 1 / 30) is not None

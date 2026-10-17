@@ -69,7 +69,9 @@ def update_buttons(buttons: list[Button], ptr: Pointers, dt: float) -> Button | 
             inside = [p for p in ptr.palms if b.rect.collidepoint(p)]
         else:
             inside = [p for p in ptr.hands if b.rect.collidepoint(p)]
-        if any(b.rect.collidepoint(p) for p in ptr.punches):
+        # Palm mode: ONLY an open palm selects. A punch doesn't - reaching up to a button
+        # with a fist looks just like an upward punch.
+        if ptr.mode != "palm" and any(b.rect.collidepoint(p) for p in ptr.punches):
             fired = b
         if not inside:
             b.latched = False

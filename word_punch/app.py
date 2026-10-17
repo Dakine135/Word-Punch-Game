@@ -627,7 +627,8 @@ class App:
                 if kp and el:  # any visible hand points; an open palm selects
                     g, seen = self.hand_gestures.get((s.index, hand), (None, 0.0))
                     x, y = self.view.to_screen(kp.x + (kp.x - el.x) * 0.35, kp.y + (kp.y - el.y) * 0.35)
-                    self.menu_hands.append((s.index, x, y, g if now - seen < 0.5 else None))
+                    # a palm only counts while it's fresh: close it into a fist and it stops at once
+                    self.menu_hands.append((s.index, x, y, g if now - seen < 0.3 else None))
             for hand in ("left_wrist", "right_wrist"):
                 kp = person.get(hand, 0.4)
                 if kp:
@@ -868,7 +869,7 @@ class App:
         if mode == "palm" and self.vision:
             hands = [(x, y) for _, x, y, _ in self.menu_hands]
             palms = [(x, y) for _, x, y, g in self.menu_hands if g == "Open_Palm"]
-            return Pointers(hands=hands, mouse=mouse, clicks=self.frame_clicks, punches=self.frame_punches,
+            return Pointers(hands=hands, mouse=mouse, clicks=self.frame_clicks, punches=[],
                             palms=palms, mode="palm", hold_s=self.cfg.get("menu", {}).get("palm_hold_s", 0.4))
         return Pointers(hands=[(x, y) for _, x, y in self.hands], mouse=mouse,
                         clicks=self.frame_clicks, punches=self.frame_punches)
