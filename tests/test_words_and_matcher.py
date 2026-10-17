@@ -122,3 +122,18 @@ def test_user_alias_saved_and_loaded(tmp_path):
     assert not b.add_user_alias("was", "said", path)   # a list word
     b2 = WordBank(user_aliases=path)
     assert "fuzz" in b2.aliases_of("was")
+
+
+def test_grade_levels_through_high_school(bank):
+    keys = ["g2a", "g2b", "g3a", "g3b", "g4", "g5", "g6", "g7", "g8", "g9", "g10", "g11", "g12"]
+    assert bank.order[-len(keys):] == keys
+    seen = {}
+    for k in bank.order:
+        if bank.level(k).is_letters:
+            continue
+        for w in bank.level(k).words:
+            assert w.lower() not in seen, f"{w} is in both {seen.get(w.lower())} and {k}"
+            seen[w.lower()] = k
+    assert all(len(bank.level(k).words) >= 20 for k in keys)
+    pts = [bank.level(k).points for k in bank.order]
+    assert pts == sorted(pts), "harder levels should be worth more"

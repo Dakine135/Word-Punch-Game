@@ -77,7 +77,7 @@ python -m word_punch --game boss --mode coop --player Sam:k3 --player Max:letter
 python -m word_punch.report   # parent progress report
 ```
 
-**Levels:** `letters k1 k2 k3 k4 g1q1 g1q2 g1q3 g1q4`
+**Levels:** `letters k1 k2 k3 k4 g1q1 g1q2 g1q3 g1q4 g2a g2b g3a g3b g4 g5 g6 g7 g8 g9 g10 g11 g12`
 
 **Keys:**
 

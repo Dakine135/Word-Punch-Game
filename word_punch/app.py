@@ -196,6 +196,8 @@ class App:
         mode = self.args.mode
         if mode not in allowed_modes(self.args.kind, len(self.args.names)):
             mode = allowed_modes(self.args.kind, len(self.args.names))[0]
+        lanes = len(self.args.names) if mode == "split" else 1
+        self.renderer.max_block_w = int(self.size[0] / lanes) - 30
         self.game = make_game(self.args.kind, mode=mode, player_names=self.args.names,
                               player_levels=self.args.levels, bank=self.bank, cfg=self.cfg,
                               size=self.size, measure=self.renderer.measure, now=time.time())

@@ -2,7 +2,8 @@
 # Levels are played in `order`. `points` is the base score for breaking a word at that level.
 # Letters are generated in code (A-Z, a-z); their spoken aliases live in [letters] below.
 
-order = ["letters", "k1", "k2", "k3", "k4", "g1q1", "g1q2", "g1q3", "g1q4"]
+order = ["letters", "k1", "k2", "k3", "k4", "g1q1", "g1q2", "g1q3", "g1q4",
+         "g2a", "g2b", "g3a", "g3b", "g4", "g5", "g6", "g7", "g8", "g9", "g10", "g11", "g12"]
 
 # Words that sound the same. Hearing any member counts for every member,
 # and the spawner never puts two members of a group on screen at once.
@@ -27,6 +28,12 @@ homophones = [
   ["through", "threw"],
   ["were", "we're"],
   ["a", "uh"],          # kids (and grown-ups) usually say "a" as "uh"
+  ["eight", "ate"],
+  ["night", "knight"],
+  ["rain", "reign", "rein"],
+  ["weather", "whether"],
+  ["allusion", "illusion"],
+  ["muscle", "mussel"],
 ]
 
 
@@ -79,6 +86,111 @@ name = "1st - Q4"
 points = 45
 words = ["about", "sure", "laugh", "through", "great", "right", "these", "three", "first",
          "above", "write", "why", "enough", "together", "far", "full", "against"]
+
+# ---- Added for older kids (nieces). Grades 2-3: Dolch sight words (public domain, Dolch
+# 1936/1948) minus words already on the K/1st school lists, plus phonics-pattern words.
+# Grades 4-12: our own lists following common spelling/vocabulary sequences (prefixes and
+# suffixes -> drop-e/change-y, -tion -> Greek/Latin roots -> -ance/-ence, -ious -> academic
+# and SAT-style words in high school).
+
+[levels.g2a]
+name = "2nd - Sight"
+points = 50
+words = ["always", "around", "before", "best", "both", "buy", "call", "cold", "fast", "five",
+         "found", "gave", "green", "its", "made", "off", "pull", "sing", "sit", "sleep", "tell",
+         "those", "upon", "us", "wash", "which", "wish", "work"]
+
+[levels.g2b]
+name = "2nd - Patterns"
+points = 55
+words = ["ship", "chair", "thumb", "whale", "train", "snake", "sheep", "beach", "boat", "slide",
+         "cloud", "smile", "grape", "truck", "brush", "frog", "plant", "queen", "night", "rain",
+         "stone", "splash", "cheese", "jumped", "playing", "kite"]
+
+[levels.g3a]
+name = "3rd - Sight"
+points = 60
+words = ["better", "bring", "carry", "clean", "cut", "done", "draw", "drink", "eight", "fall",
+         "got", "grow", "hold", "hot", "hurt", "if", "keep", "light", "long", "much", "myself",
+         "never", "pick", "seven", "shall", "show", "six", "small", "start", "ten", "try", "warm"]
+
+[levels.g3b]
+name = "3rd - Patterns"
+points = 65
+words = ["bird", "horse", "shirt", "storm", "burn", "coin", "voice", "mouth", "crown", "flower",
+         "house", "sunshine", "birthday", "snowman", "rainbow", "careful", "helpless", "painted",
+         "hopping", "smiled", "sharp", "nurse", "toy", "joy"]
+
+[levels.g4]
+name = "4th grade"
+points = 70
+words = ["unhappy", "rewrite", "preview", "disagree", "kindness", "movement", "quickly", "though",
+         "thought", "caught", "daughter", "laughter", "beautiful", "different", "answer", "island",
+         "knife", "wrong", "weather", "library", "minute", "favorite", "believe", "special"]
+
+[levels.g5]
+name = "5th grade"
+points = 80
+words = ["happiness", "studying", "hoping", "comfortable", "possible", "terrible", "adventure",
+         "attention", "education", "celebrate", "imagine", "decision", "popular", "ordinary",
+         "separate", "vacation", "delicious", "government", "temperature", "character", "muscle",
+         "journey", "original", "knowledge"]
+
+[levels.g6]
+name = "6th grade"
+points = 90
+words = ["photograph", "telephone", "geography", "biology", "autograph", "transport", "inspect",
+         "predict", "construct", "microscope", "alphabet", "physical", "rhythm", "column", "autumn",
+         "design", "citizen", "ancient", "debate", "evidence", "analyze", "conclusion", "observe",
+         "environment"]
+
+[levels.g7]
+name = "7th grade"
+points = 100
+words = ["appearance", "confidence", "difference", "independence", "curious", "mysterious",
+         "previous", "necessary", "dictionary", "laboratory", "category", "accomplish",
+         "consequence", "hypothesis", "perspective", "significant", "strategy", "persuade",
+         "sufficient", "approximately", "technology", "argument", "conscience", "achievement"]
+
+[levels.g8]
+name = "8th grade"
+points = 110
+words = ["ambiguous", "analysis", "colleague", "controversy", "democracy", "discipline", "efficient",
+         "emphasize", "exaggerate", "guarantee", "inevitable", "legitimate", "opportunity",
+         "parallel", "phenomenon", "privilege", "rhetoric", "simultaneous", "sophisticated",
+         "unanimous", "versatile", "vulnerable", "restaurant", "rendezvous"]
+
+[levels.g9]
+name = "9th grade"
+points = 120
+words = ["abundant", "adapt", "advocate", "ambition", "anticipate", "assess", "coherent",
+         "collaborate", "compassion", "comprehensive", "contradict", "credible", "diminish",
+         "elaborate", "eloquent", "empathy", "endure", "feasible", "hostile", "influence",
+         "integrity", "interpret", "justify", "objective"]
+
+[levels.g10]
+name = "10th grade"
+points = 130
+words = ["allusion", "anecdote", "benevolent", "candid", "catastrophe", "conformity", "cynical",
+         "deduce", "dilemma", "diverse", "enigma", "ephemeral", "fallacy", "futile", "hierarchy",
+         "hypocrisy", "imminent", "indifferent", "innovative", "irony", "meticulous", "nostalgia",
+         "obsolete", "paradox"]
+
+[levels.g11]
+name = "11th grade"
+points = 140
+words = ["aesthetic", "ambivalent", "arbitrary", "autonomy", "candor", "circumvent", "concise",
+         "conventional", "dichotomy", "didactic", "discrepancy", "empirical", "equivocal",
+         "euphemism", "exemplary", "extraneous", "fortuitous", "gregarious", "inherent",
+         "juxtapose", "lucid", "mitigate", "nuance", "pragmatic"]
+
+[levels.g12]
+name = "12th grade"
+points = 150
+words = ["acquiesce", "ameliorate", "anachronism", "antithesis", "assiduous", "cacophony",
+         "capricious", "connoisseur", "deleterious", "egregious", "enervate", "esoteric",
+         "garrulous", "idiosyncrasy", "impetuous", "inexorable", "loquacious", "magnanimous",
+         "obfuscate", "perfunctory", "quintessential", "sycophant", "ubiquitous", "vicissitude"]
 
 # Word sound-alikes: what the recognizer often hears when a kid reads the word. They count
 # for the word (a little weaker than the real word). Add your own without editing this file:

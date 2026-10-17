@@ -43,11 +43,24 @@ class Renderer:
 
     # ---- sizes (the game uses these for collisions) ------------------------------
 
+    max_block_w: int | None = None  # set per game: long words shrink to fit a lane
+
     def measure(self, text: str, is_letter: bool) -> tuple[int, int]:
         f = self.letter_font if is_letter else self.word_font
         tw, th = f.size(text)
         pad_x, pad_y = int(f.get_height() * 0.45), int(f.get_height() * 0.08)
-        return tw + 2 * pad_x, th + 2 * pad_y
+        w, h = tw + 2 * pad_x, th + 2 * pad_y
+        if self.max_block_w and w > self.max_block_w:  # e.g. "comprehensive" with 3 kids
+            k = self.max_block_w / w
+            w, h = self.max_block_w, max(int(h * k), int(h * 0.7))
+        return w, h
+
+    def _fit(self, txt: pygame.Surface, max_w: int) -> pygame.Surface:
+        """Shrink rendered text that's wider than its block (long words in narrow lanes)."""
+        if txt.get_width() <= max_w:
+            return txt
+        k = max_w / txt.get_width()
+        return pygame.transform.smoothscale(txt, (max_w, max(1, int(txt.get_height() * k))))
 
     def _text(self, text, f, color):
         """Text with a dark outline so it reads well over the camera picture."""
@@ -89,6 +102,7 @@ class Renderer:
         pygame.draw.rect(img, WHITE, rect, 4, border_radius=radius)
         f = self.letter_font if w.is_letter else self.word_font
         txt = self._text(w.text, f, INK)
+        txt = self._fit(txt, rect.width - 24)
         img.blit(txt, txt.get_rect(center=rect.center))
         return img
 
@@ -128,6 +142,7 @@ class Renderer:
                 pygame.draw.rect(blk, (35, 42, 70, 225), rect, border_radius=radius)
                 pygame.draw.rect(blk, (150, 160, 200), rect, 3, border_radius=radius)
                 txt = self._text(w.text, f, WHITE)
+            txt = self._fit(txt, rect.width - 24)
             blk.blit(txt, txt.get_rect(center=rect.center))
             if w.scale < 1.0:
                 sw, sh = max(1, int(blk.get_width() * w.scale)), max(1, int(blk.get_height() * w.scale))
