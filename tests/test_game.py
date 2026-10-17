@@ -174,12 +174,40 @@ def test_losing_a_life_in_the_game_resets_the_run(bank):
     assert sum(g.lanes[0].tracks[0].session.values()) == 0
 
 
-def test_difficulty_slows_for_slow_readers():
-    d = Difficulty(dict(BASE_CFG["difficulty"], start_fall=0.08))  # (not your settings.toml speed)
-    start = d.fall
-    for _ in range(5):
-        d.on_hit(7.0)
-    assert d.fall < start
+def test_difficulty_follows_how_far_down_words_get():
+    cfg = BASE_CFG["difficulty"]
+    d = Difficulty(cfg)
+    start, gap, room = d.fall, d.interval, d.on_screen
+    assert d.on_hit(0.4) == 0                      # right at the target: no change
+    for _ in range(4):
+        assert d.on_hit(0.1) == 1                  # smashed near the top: faster, more words
+    assert d.fall > start and d.interval < gap and d.on_screen >= room
+    fast = d.fall
+    for _ in range(3):
+        assert d.on_hit(0.85) == -1                # smashed near the floor: slower
+    assert d.fall < fast
+    assert d.on_hit(None) == 0                     # games where words don't fall
+
+
+def test_difficulty_can_slow_below_a_slow_start():
+    d = Difficulty(dict(BASE_CFG["difficulty"], start_fall=0.035))  # your settings.toml start
+    for _ in range(10):
+        d.on_hit(0.9)
+    assert d.fall < 0.035 and d.fall >= BASE_CFG["difficulty"]["min_fall"]
+
+
+def test_quick_reads_speed_up_a_real_game(bank):
+    g = make_game(bank, mode="coop", levels=("k2",), lives=5, round_end="lives")
+    start = g.lanes[0].difficulty.fall
+    now = 0.0
+    for _ in range(300):                           # read + smash each word as soon as it's in
+        now += 1 / 30
+        g.update(1 / 30, now)
+        for w in list(g.words):
+            if w.y > g.h * 0.12:
+                g.heard(w.text, now)
+                g._break(w, 0, now)
+    assert g.lanes[0].difficulty.fall > start * 1.5
 
 
 def test_letter_mastery_is_case_insensitive(bank):
@@ -210,16 +238,13 @@ def test_missed_words_come_back_more(bank):
 
 def test_difficulty_ramps_and_eases():
     d = Difficulty(BASE_CFG["difficulty"])
-    start = d.fall
     for _ in range(5):
-        d.on_hit(1.0)
-    assert d.fall > start
+        d.on_hit(0.1)
     fast = d.fall
-    d.on_miss()
-    assert d.fall < fast
+    assert d.on_miss() == -1 and d.fall < fast
     for _ in range(200):
-        d.on_hit(0.5)
-    assert d.fall == BASE_CFG["difficulty"]["max_fall"]
+        d.on_hit(0.0)
+    assert abs(d.fall - BASE_CFG["difficulty"]["max_fall"]) < 1e-9
 
 
 def test_scoring():

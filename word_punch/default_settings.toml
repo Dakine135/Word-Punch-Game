@@ -96,17 +96,18 @@ rocket_from = "bottom"   # "bottom" = fist rocket launches from the floor at the
 
 [difficulty]
 start_fall = 0.055       # fraction of screen height per second (~18 s to fall)
-min_fall = 0.035
+min_fall = 0.025         # slowest it can go (~40 s to fall)
 max_fall = 0.20
 start_interval = 3.5     # seconds between new words in a lane
 min_interval = 1.2
 max_interval = 5.0
-max_on_screen = 3        # per lane
+max_on_screen = 3        # per lane, at the slowest speed
+extra_on_screen = 2      # up to this many more as the lane speeds up
 unlocked_slowdown = 0.4  # unlocked words fall at this fraction of speed (time to punch)
-fast_read_s = 2.0        # reads faster than this (average of the last few) speed the game up
-slow_read_s = 4.5        # reads slower than this slow it down
-ramp_up = 1.08
-ease_down = 0.88
+target_depth = 0.4       # aim for words read + smashed this far down the screen (0 top, 1 floor):
+                         # higher than this -> faster and more words, lower -> slower
+pace_gain = 0.8          # how hard each smashed word pushes the speed
+ease_down = 0.8          # a word that gets away: speed x this
 
 [scoring]
 read_target_s = 4.0      # reading faster than this earns up to 2x

@@ -128,7 +128,7 @@ class WhackGame(Game):
                 continue
             lane.spawn_timer -= dt
             up = [w for w in self.words if w.lane is lane]
-            if lane.spawn_timer > 0 or len(up) >= min(self.diff_cfg["max_on_screen"], len(lane.holes) - 1):
+            if lane.spawn_timer > 0 or len(up) >= min(lane.difficulty.on_screen, len(lane.holes) - 1):
                 continue
             used = {w.hole for w in up}
             free = [i for i in range(len(lane.holes)) if i not in used]
@@ -161,6 +161,10 @@ class WhackGame(Game):
             w.scale = min(1.0, t_up / self.POP_S, max(0.0, t_left / self.POP_S))
             if t_left <= 0:
                 self._duck(w, now)
+
+    def _depth(self, w: FallingWord, now: float) -> float | None:
+        """Whack words don't fall: use how much of their time up has gone by."""
+        return max(0.0, min(1.0, (now - w.pop_at) / max(0.1, w.down_at - w.pop_at)))
 
     def _duck(self, w: FallingWord, now: float) -> None:
         """A word went back down without being whacked."""
@@ -342,6 +346,9 @@ class SentenceGame(Game):
     @property
     def bar_y(self) -> float:
         return self.h * 0.26
+
+    def _depth(self, w, now):
+        return None  # words float in place: nothing to pace
 
     def update(self, dt: float, now: float) -> None:
         if self.over or self._time_up(now):

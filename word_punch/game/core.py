@@ -57,6 +57,7 @@ class FallingWord:
     unlocked: bool = False
     unlocked_at: float = 0.0
     read_time: float = 0.0
+    unlock_depth: float = -1.0  # how far down the screen it was when read (0 top .. 1 floor)
     misses: int = 0  # times it hit the floor (gentle mode)
     last_clang: float = -1e9
     power: str = ""  # "" or one of POWERS
@@ -253,6 +254,7 @@ class Game:
             target.unlocked = True
             target.unlocked_at = now
             target.read_time = now - target.spawned_at
+            target.unlock_depth = self._depth(target, now)
             self.events.append(Event("unlock", target, x=target.x, y=target.y))
             if self.mode == "tag":
                 self.players[0].score += 5  # the reader scores for reading
@@ -341,7 +343,7 @@ class Game:
                 continue
             lane.spawn_timer -= dt
             on_screen = sum(1 for w in self.words if w.lane is lane)
-            if lane.spawn_timer <= 0 and on_screen < self.diff_cfg["max_on_screen"]:
+            if lane.spawn_timer <= 0 and on_screen < lane.difficulty.on_screen:
                 if self._spawn(lane, now):
                     lane.spawn_timer = lane.difficulty.interval
                 else:
@@ -443,7 +445,7 @@ class Game:
         self.words.remove(w)
         lane = w.lane
         lane.broken += 1
-        self._speed_changed(lane, lane.difficulty.on_hit(w.read_time), now)
+        self._speed_changed(lane, lane.difficulty.on_hit(self._hit_depth(w, now)), now)
         reader = w.track.owner if w.track.owner is not None else player
         self._stat(reader, w.text, "read")
         self._stat(reader, w.text, "time", w.read_time)
@@ -484,6 +486,19 @@ class Game:
         if self.mode == "competitive" and self.winner is None and self.result == "complete":
             self.winner = max(range(len(self.players)), key=lambda i: self.players[i].score)
         self.events.append(Event("gameover", text=self.result))
+
+    def _depth(self, w: FallingWord, now: float) -> float | None:
+        """How far along its fall a word is: 0 = top, 1 = floor (None = doesn't apply)."""
+        return max(0.0, min(1.0, w.y / self.floor))
+
+    def _hit_depth(self, w: FallingWord, now: float) -> float | None:
+        """Pacing signal for a smashed word: where it was read and where it was hit."""
+        hit = self._depth(w, now)
+        if hit is None:
+            return None
+        if w.neutral or w.unlock_depth < 0:  # nothing to read (catch): just where it was hit
+            return hit
+        return (w.unlock_depth + hit) / 2
 
     def _speed_changed(self, lane, change: int, now: float) -> None:
         """Tell the kids when the pace shifts (at most every few seconds)."""
