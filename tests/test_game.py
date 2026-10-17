@@ -369,5 +369,4 @@ def test_review_is_recent_and_never_single_letters(bank):
     picks = {track.candidates(rng)[0].text for _ in range(200)}
     assert not any(len(w) == 1 for w in picks)
     on_k1 = Track(bank, "k1", rules)                             # on K-Q1 itself "a" and "I" still show
-    assert any(len(p.text) == 1 for p in on_k1.candidates(random.Random(1)) if p.level_key == "k1") \
-        or bank.level("k1").words
+    assert {"a", "I"} <= {p.text for p in on_k1.candidates(random.Random(1))}
